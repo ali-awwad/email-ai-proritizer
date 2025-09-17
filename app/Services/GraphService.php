@@ -8,9 +8,11 @@ use Exception;
 class GraphService
 {
     private $provider;
+    private $emailCacheService;
     
-    public function __construct()
+    public function __construct(EmailCacheService $emailCacheService)
     {
+        $this->emailCacheService = $emailCacheService;
         $this->setupAuthProvider();
     }
     
@@ -110,11 +112,19 @@ class GraphService
     
     public function clearAuthentication(): void
     {
+        // Clear both authentication and cache when user logs out
         session()->forget(['graph_access_token', 'graph_refresh_token', 'graph_expires']);
+        $this->emailCacheService->clearCache();
     }
     
-    public function getUnreadEmails(int $limit = 5): array
+    public function getUnreadEmails(int $limit = 5, bool $forceRefresh = false): array
     {
+        // Check cache first unless force refresh is requested
+        if (!$forceRefresh && $this->emailCacheService->hasValidEmailCache()) {
+            $cachedData = $this->emailCacheService->getCachedEmails();
+            return $cachedData['emails'];
+        }
+        
         $accessToken = $this->getValidAccessToken();
         
         if (!$accessToken) {
@@ -146,7 +156,12 @@ class GraphService
             });
             
             // Return the focused emails, limited to the requested amount
-            return array_slice(array_values($focusedEmails), 0, $limit);
+            $finalEmails = array_slice(array_values($focusedEmails), 0, $limit);
+            
+            // Cache the results
+            $this->emailCacheService->cacheEmails($finalEmails);
+            
+            return $finalEmails;
             
         } catch (Exception $e) {
             // Fallback to the original approach with additional filtering
@@ -173,7 +188,12 @@ class GraphService
                            $email['inference_classification'] !== 'other';
                 });
                 
-                return array_slice(array_values($filteredEmails), 0, $limit);
+                $finalEmails = array_slice(array_values($filteredEmails), 0, $limit);
+                
+                // Cache the results
+                $this->emailCacheService->cacheEmails($finalEmails);
+                
+                return $finalEmails;
                 
             } catch (Exception $e2) {
                 throw new Exception('Failed to fetch emails: ' . $e->getMessage());
@@ -240,8 +260,14 @@ class GraphService
         return $emails;
     }
     
-    public function getUserInfo(): array
+    public function getUserInfo(bool $forceRefresh = false): array
     {
+        // Check cache first unless force refresh is requested
+        if (!$forceRefresh && $this->emailCacheService->hasValidUserInfoCache()) {
+            $cachedData = $this->emailCacheService->getCachedUserInfo();
+            return $cachedData['user_info'];
+        }
+        
         $accessToken = $this->getValidAccessToken();
         
         if (!$accessToken) {
@@ -251,15 +277,28 @@ class GraphService
         try {
             $response = $this->makeGraphRequest('GET', '/me', $accessToken);
             
-            return [
+            $userInfo = [
                 'display_name' => $response['displayName'] ?? '',
                 'email' => $response['mail'] ?? $response['userPrincipalName'] ?? '',
                 'id' => $response['id'] ?? '',
                 'user_type' => $response['userType'] ?? 'unknown',
                 'account_enabled' => $response['accountEnabled'] ?? false,
             ];
+            
+            // Cache the user info
+            $this->emailCacheService->cacheUserInfo($userInfo);
+            
+            return $userInfo;
         } catch (Exception $e) {
             throw new Exception('Failed to fetch user info: ' . $e->getMessage());
         }
+    }
+    
+    /**
+     * Get cache service instance for external use
+     */
+    public function getCacheService(): EmailCacheService
+    {
+        return $this->emailCacheService;
     }
 }

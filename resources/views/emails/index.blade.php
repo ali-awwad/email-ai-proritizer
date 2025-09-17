@@ -116,6 +116,153 @@
                 </div>
             </div>
 
+            <!-- Cache Status -->
+            @if(isset($cacheStats))
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="mb-0">
+                            <i class="fas fa-database me-2"></i>
+                            Cache Status
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <h6>Email Cache</h6>
+                                @if($cacheStats['emails']['cached'])
+                                    <div class="d-flex align-items-center mb-2">
+                                        <span class="badge bg-success me-2">
+                                            <i class="fas fa-check"></i> Cached
+                                        </span>
+                                        <small class="text-muted">{{ $cacheStats['emails']['count'] }} emails</small>
+                                    </div>
+                                    <small class="text-muted">
+                                        Cached: {{ \Carbon\Carbon::parse($cacheStats['emails']['cached_at'])->format('M d, H:i:s') }}
+                                        <br>
+                                        Expires: {{ \Carbon\Carbon::parse($cacheStats['emails']['expires_at'])->format('M d, H:i:s') }}
+                                    </small>
+                                @else
+                                    <span class="badge bg-secondary">
+                                        <i class="fas fa-times"></i> Not Cached
+                                    </span>
+                                @endif
+                            </div>
+                            <div class="col-md-6">
+                                <h6>User Info Cache</h6>
+                                @if($cacheStats['user_info']['cached'])
+                                    <div class="d-flex align-items-center mb-2">
+                                        <span class="badge bg-success me-2">
+                                            <i class="fas fa-check"></i> Cached
+                                        </span>
+                                    </div>
+                                    <small class="text-muted">
+                                        Cached: {{ \Carbon\Carbon::parse($cacheStats['user_info']['cached_at'])->format('M d, H:i:s') }}
+                                        <br>
+                                        Expires: {{ \Carbon\Carbon::parse($cacheStats['user_info']['expires_at'])->format('M d, H:i:s') }}
+                                    </small>
+                                @else
+                                    <span class="badge bg-secondary">
+                                        <i class="fas fa-times"></i> Not Cached
+                                    </span>
+                                @endif
+                            </div>
+                        </div>
+                        <div class="row mt-3">
+                            <div class="col-12">
+                                <small class="text-muted">
+                                    <i class="fas fa-clock me-1"></i>
+                                    Cache TTL: {{ $cacheStats['cache_ttl_seconds'] }} seconds ({{ round($cacheStats['cache_ttl_seconds'] / 60, 1) }} minutes)
+                                </small>
+                            </div>
+                        </div>
+                        <div class="row mt-2">
+                            <div class="col-12">
+                                <button class="btn btn-sm btn-outline-warning me-2" onclick="clearCache()">
+                                    <i class="fas fa-trash me-1"></i>
+                                    Clear Cache
+                                </button>
+                                <button class="btn btn-sm btn-outline-info" onclick="refreshCacheStats()">
+                                    <i class="fas fa-sync me-1"></i>
+                                    Refresh Stats
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            @endif
+
+            @if(isset($cacheStats))
+                <!-- Cache Status -->
+                <div class="row mb-4">
+                    <div class="col-12">
+                        <div class="card">
+                            <div class="card-header d-flex justify-content-between align-items-center">
+                                <h6 class="mb-0">
+                                    <i class="fas fa-database me-2 text-success"></i>
+                                    Cache Status
+                                </h6>
+                                <div>
+                                    <button class="btn btn-sm btn-outline-primary me-2" onclick="refreshCacheStats()">
+                                        <i class="fas fa-sync-alt" id="cache-refresh-icon"></i>
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-warning" onclick="clearCache()">
+                                        <i class="fas fa-trash me-1"></i>
+                                        Clear Cache
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="card-body py-2" id="cache-status">
+                                <div class="row text-center">
+                                    <div class="col-md-3">
+                                        <div class="mb-1">
+                                            <i class="fas fa-envelope text-primary"></i>
+                                            <small class="d-block text-muted">Emails Cache</small>
+                                        </div>
+                                        <span class="badge {{ $cacheStats['emails']['cached'] ? 'bg-success' : 'bg-secondary' }}">
+                                            {{ $cacheStats['emails']['cached'] ? 'Cached' : 'Not Cached' }}
+                                        </span>
+                                        @if($cacheStats['emails']['cached'])
+                                            <small class="d-block text-muted mt-1">
+                                                {{ $cacheStats['emails']['count'] }} emails
+                                            </small>
+                                        @endif
+                                    </div>
+                                    <div class="col-md-3">
+                                        <div class="mb-1">
+                                            <i class="fas fa-user text-info"></i>
+                                            <small class="d-block text-muted">User Info Cache</small>
+                                        </div>
+                                        <span class="badge {{ $cacheStats['user_info']['cached'] ? 'bg-success' : 'bg-secondary' }}">
+                                            {{ $cacheStats['user_info']['cached'] ? 'Cached' : 'Not Cached' }}
+                                        </span>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <div class="mb-1">
+                                            <i class="fas fa-clock text-warning"></i>
+                                            <small class="d-block text-muted">Cache TTL</small>
+                                        </div>
+                                        <small class="text-muted">{{ $cacheStats['cache_ttl_seconds'] }}s</small>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <div class="mb-1">
+                                            <i class="fas fa-hourglass-half text-danger"></i>
+                                            <small class="d-block text-muted">Email Cache Expires</small>
+                                        </div>
+                                        @if($cacheStats['emails']['cached'])
+                                            <small class="text-muted" id="cache-expires">
+                                                {{ \Carbon\Carbon::parse($cacheStats['emails']['expires_at'])->format('H:i:s') }}
+                                            </small>
+                                        @else
+                                            <small class="text-muted">N/A</small>
+                                        @endif
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            @endif
+
             @if(count($emails) == 0)
                 <!-- Account Type Help -->
                 <div class="alert alert-info" role="alert">
@@ -270,6 +417,11 @@
                         emailCount.textContent = data.count;
                     }
                     
+                    // Update cache stats if available
+                    if (data.cache_stats) {
+                        updateCacheStatus(data.cache_stats);
+                    }
+                    
                     // Update emails container
                     if (data.emails.length > 0) {
                         let emailsHtml = '';
@@ -361,6 +513,162 @@
                     alert.remove();
                 }
             }, 5000);
+        }
+
+        async function clearCache() {
+            const cacheRefreshIcon = document.getElementById('cache-refresh-icon');
+            
+            try {
+                cacheRefreshIcon.classList.add('fa-spin');
+                
+                const response = await fetch('{{ route("emails.cache.clear") }}', {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                        'Accept': 'application/json',
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showAlert('success', 'Cache cleared successfully!');
+                    // Refresh cache stats
+                    await refreshCacheStats();
+                } else {
+                    showAlert('danger', 'Failed to clear cache: ' + data.error);
+                }
+            } catch (error) {
+                showAlert('danger', 'Error clearing cache: ' + error.message);
+            } finally {
+                cacheRefreshIcon.classList.remove('fa-spin');
+            }
+        }
+
+        async function refreshCacheStats() {
+            const cacheRefreshIcon = document.getElementById('cache-refresh-icon');
+            
+            try {
+                cacheRefreshIcon.classList.add('fa-spin');
+                
+                const response = await fetch('{{ route("emails.cache.stats") }}', {
+                    method: 'GET',
+                    headers: {
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                        'Accept': 'application/json',
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    updateCacheStatus(data.cache_stats);
+                } else {
+                    showAlert('danger', 'Failed to refresh cache stats: ' + data.error);
+                }
+            } catch (error) {
+                showAlert('danger', 'Error refreshing cache stats: ' + error.message);
+            } finally {
+                cacheRefreshIcon.classList.remove('fa-spin');
+            }
+        }
+
+        function updateCacheStatus(cacheStats) {
+            const cacheStatus = document.getElementById('cache-status');
+            if (!cacheStatus) return;
+            
+            const formatTime = (dateString) => {
+                if (!dateString) return 'N/A';
+                const date = new Date(dateString);
+                return date.toLocaleTimeString('en-US', { hour12: false });
+            };
+            
+            cacheStatus.innerHTML = `
+                <div class="row text-center">
+                    <div class="col-md-3">
+                        <div class="mb-1">
+                            <i class="fas fa-envelope text-primary"></i>
+                            <small class="d-block text-muted">Emails Cache</small>
+                        </div>
+                        <span class="badge ${cacheStats.emails.cached ? 'bg-success' : 'bg-secondary'}">
+                            ${cacheStats.emails.cached ? 'Cached' : 'Not Cached'}
+                        </span>
+                        ${cacheStats.emails.cached ? `<small class="d-block text-muted mt-1">${cacheStats.emails.count} emails</small>` : ''}
+                    </div>
+                    <div class="col-md-3">
+                        <div class="mb-1">
+                            <i class="fas fa-user text-info"></i>
+                            <small class="d-block text-muted">User Info Cache</small>
+                        </div>
+                        <span class="badge ${cacheStats.user_info.cached ? 'bg-success' : 'bg-secondary'}">
+                            ${cacheStats.user_info.cached ? 'Cached' : 'Not Cached'}
+                        </span>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="mb-1">
+                            <i class="fas fa-clock text-warning"></i>
+                            <small class="d-block text-muted">Cache TTL</small>
+                        </div>
+                        <small class="text-muted">${cacheStats.cache_ttl_seconds}s</small>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="mb-1">
+                            <i class="fas fa-hourglass-half text-danger"></i>
+                            <small class="d-block text-muted">Email Cache Expires</small>
+                        </div>
+                        <small class="text-muted" id="cache-expires">
+                            ${formatTime(cacheStats.emails.expires_at)}
+                        </small>
+                    </div>
+                </div>
+            `;
+        }
+        
+        async function clearCache() {
+            try {
+                const response = await fetch('{{ route("emails.cache.clear") }}', {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                        'Accept': 'application/json',
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showAlert('success', 'Cache cleared successfully!');
+                    // Refresh cache stats
+                    await refreshCacheStats();
+                } else {
+                    showAlert('danger', 'Failed to clear cache: ' + data.error);
+                }
+            } catch (error) {
+                showAlert('danger', 'Error clearing cache: ' + error.message);
+            }
+        }
+        
+        async function refreshCacheStats() {
+            try {
+                const response = await fetch('{{ route("emails.cache.stats") }}', {
+                    method: 'GET',
+                    headers: {
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                        'Accept': 'application/json',
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    updateCacheStatus(data.cache_stats);
+                    showAlert('success', 'Cache stats refreshed!');
+                } else {
+                    showAlert('danger', 'Failed to refresh cache stats: ' + data.error);
+                }
+            } catch (error) {
+                showAlert('danger', 'Error refreshing cache stats: ' + error.message);
+            }
         }
     </script>
 </body>
