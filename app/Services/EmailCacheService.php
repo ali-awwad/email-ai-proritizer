@@ -9,8 +9,10 @@ use Carbon\Carbon;
 class EmailCacheService
 {
     private const CACHE_TTL = 300; // 5 minutes
+    private const AI_CACHE_TTL = 3600; // 1 hour for AI analysis
     private const CACHE_PREFIX = 'emails:';
     private const USER_INFO_CACHE_PREFIX = 'user_info:';
+    private const AI_ANALYSIS_CACHE_PREFIX = 'ai_analysis:';
     
     /**
      * Generate a cache key for emails based on user session
@@ -28,6 +30,16 @@ class EmailCacheService
     {
         $userId = $this->getUserId();
         return self::USER_INFO_CACHE_PREFIX . $userId;
+    }
+    
+    /**
+     * Generate a cache key for AI analysis based on email content hash
+     */
+    private function getAIAnalysisCacheKey(array $email): string
+    {
+        $userId = $this->getUserId();
+        $contentHash = md5(($email['subject'] ?? '') . ($email['body_preview'] ?? '') . ($email['from'] ?? ''));
+        return self::AI_ANALYSIS_CACHE_PREFIX . $userId . ':' . $contentHash;
     }
     
     /**
@@ -212,5 +224,112 @@ class EmailCacheService
         
         // Return true if cache expires within 10% of total TTL (30 seconds for 5 min TTL)
         return $secondsUntilExpiry <= (self::CACHE_TTL * 0.1);
+    }
+    
+    /**
+     * Check if AI analysis is cached for a specific email
+     */
+    public function hasAIAnalysis(array $email): bool
+    {
+        try {
+            return Cache::has($this->getAIAnalysisCacheKey($email));
+        } catch (\Exception $e) {
+            return false;
+        }
+    }
+    
+    /**
+     * Get cached AI analysis for an email
+     */
+    public function getAIAnalysis(array $email): ?array
+    {
+        try {
+            $cached = Cache::get($this->getAIAnalysisCacheKey($email));
+            
+            if ($cached && isset($cached['analysis'], $cached['cached_at'])) {
+                return [
+                    'analysis' => $cached['analysis'],
+                    'cached_at' => $cached['cached_at'],
+                    'expires_at' => $cached['expires_at']
+                ];
+            }
+            
+            return null;
+        } catch (\Exception $e) {
+            return null;
+        }
+    }
+    
+    /**
+     * Cache AI analysis for an email
+     */
+    public function cacheAIAnalysis(array $email, array $analysis): void
+    {
+        try {
+            $now = Carbon::now();
+            $expiresAt = $now->copy()->addSeconds(self::AI_CACHE_TTL);
+            
+            $cacheData = [
+                'analysis' => $analysis,
+                'cached_at' => $now->toISOString(),
+                'expires_at' => $expiresAt->toISOString(),
+                'email_hash' => md5(($email['subject'] ?? '') . ($email['body_preview'] ?? ''))
+            ];
+            
+            Cache::put($this->getAIAnalysisCacheKey($email), $cacheData, self::AI_CACHE_TTL);
+        } catch (\Exception $e) {
+            // Silently fail if caching is not available
+        }
+    }
+    
+    /**
+     * Clear all cached data for the current user including AI analysis
+     */
+    public function clearAllCache(): void
+    {
+        $this->clearCache();
+        $this->clearUserAIAnalysisCache();
+    }
+    
+    /**
+     * Clear all AI analysis cache for the current user
+     */
+    public function clearUserAIAnalysisCache(): void
+    {
+        try {
+            $userId = $this->getUserId();
+            $pattern = self::AI_ANALYSIS_CACHE_PREFIX . $userId . ':*';
+            
+            // Note: This is a simplified approach. In production with Redis,
+            // you might want to use a more efficient pattern matching approach
+            // For now, we rely on TTL expiration
+        } catch (\Exception $e) {
+            // Silently fail
+        }
+    }
+    
+    /**
+     * Get AI analysis cache statistics
+     */
+    public function getAIAnalysisStats(array $emails): array
+    {
+        $stats = [
+            'total_emails' => count($emails),
+            'cached_analyses' => 0,
+            'cache_hit_rate' => 0,
+            'cache_ttl_seconds' => self::AI_CACHE_TTL
+        ];
+        
+        foreach ($emails as $email) {
+            if ($this->hasAIAnalysis($email)) {
+                $stats['cached_analyses']++;
+            }
+        }
+        
+        if ($stats['total_emails'] > 0) {
+            $stats['cache_hit_rate'] = round(($stats['cached_analyses'] / $stats['total_emails']) * 100, 1);
+        }
+        
+        return $stats;
     }
 }

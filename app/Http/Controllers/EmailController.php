@@ -24,7 +24,8 @@ class EmailController extends Controller
                 return view('emails.index', [
                     'emails' => [], 
                     'userInfo' => null, 
-                    'cacheStats' => null
+                    'cacheStats' => null,
+                    'aiStats' => null
                 ]);
             }
             
@@ -42,7 +43,14 @@ class EmailController extends Controller
             // Get cache statistics
             $cacheStats = $this->graphService->getCacheService()->getCacheStats();
             
-            return view('emails.index', compact('emails', 'userInfo', 'cacheStats'));
+            // Get AI analysis statistics if emails exist
+            $aiStats = null;
+            if (count($emails) > 0) {
+                $aiStats = $this->graphService->getAIService()->getAnalysisStats($emails);
+                $aiStats['cache_stats'] = $this->graphService->getCacheService()->getAIAnalysisStats($emails);
+            }
+            
+            return view('emails.index', compact('emails', 'userInfo', 'cacheStats', 'aiStats'));
             
         } catch (Exception $e) {
             // Clear authentication and show login page instead of redirect
@@ -50,7 +58,8 @@ class EmailController extends Controller
             return view('emails.index', [
                 'emails' => [], 
                 'userInfo' => null, 
-                'cacheStats' => null
+                'cacheStats' => null,
+                'aiStats' => null
             ])->with('error', 'Authentication expired. Please sign in again.');
         }
     }
@@ -120,11 +129,19 @@ class EmailController extends Controller
             $emails = $this->graphService->getUnreadEmails(5, true);
             $cacheStats = $this->graphService->getCacheService()->getCacheStats();
             
+            // Get AI analysis statistics
+            $aiStats = null;
+            if (count($emails) > 0) {
+                $aiStats = $this->graphService->getAIService()->getAnalysisStats($emails);
+                $aiStats['cache_stats'] = $this->graphService->getCacheService()->getAIAnalysisStats($emails);
+            }
+            
             return response()->json([
                 'success' => true,
                 'emails' => $emails,
                 'count' => count($emails),
-                'cache_stats' => $cacheStats
+                'cache_stats' => $cacheStats,
+                'ai_stats' => $aiStats
             ]);
             
         } catch (Exception $e) {

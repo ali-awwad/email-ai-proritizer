@@ -9,10 +9,12 @@ class GraphService
 {
     private $provider;
     private $emailCacheService;
+    private $aiService;
     
-    public function __construct(EmailCacheService $emailCacheService)
+    public function __construct(EmailCacheService $emailCacheService, AIService $aiService)
     {
         $this->emailCacheService = $emailCacheService;
+        $this->aiService = $aiService;
         $this->setupAuthProvider();
     }
     
@@ -117,12 +119,19 @@ class GraphService
         $this->emailCacheService->clearCache();
     }
     
-    public function getUnreadEmails(int $limit = 5, bool $forceRefresh = false): array
+    public function getUnreadEmails(int $limit = 5, bool $forceRefresh = false, bool $includeAI = true): array
     {
         // Check cache first unless force refresh is requested
         if (!$forceRefresh && $this->emailCacheService->hasValidEmailCache()) {
             $cachedData = $this->emailCacheService->getCachedEmails();
-            return $cachedData['emails'];
+            $emails = $cachedData['emails'];
+            
+            // Add AI analysis if requested and available
+            if ($includeAI && config('ai.enabled', true)) {
+                $emails = $this->addAIAnalysisToEmails($emails);
+            }
+            
+            return $emails;
         }
         
         $accessToken = $this->getValidAccessToken();
@@ -158,6 +167,11 @@ class GraphService
             // Return the focused emails, limited to the requested amount
             $finalEmails = array_slice(array_values($focusedEmails), 0, $limit);
             
+            // Add AI analysis if requested and available
+            if ($includeAI && config('ai.enabled', true)) {
+                $finalEmails = $this->addAIAnalysisToEmails($finalEmails);
+            }
+            
             // Cache the results
             $this->emailCacheService->cacheEmails($finalEmails);
             
@@ -189,6 +203,11 @@ class GraphService
                 });
                 
                 $finalEmails = array_slice(array_values($filteredEmails), 0, $limit);
+                
+                // Add AI analysis if requested and available
+                if ($includeAI && config('ai.enabled', true)) {
+                    $finalEmails = $this->addAIAnalysisToEmails($finalEmails);
+                }
                 
                 // Cache the results
                 $this->emailCacheService->cacheEmails($finalEmails);
@@ -300,5 +319,59 @@ class GraphService
     public function getCacheService(): EmailCacheService
     {
         return $this->emailCacheService;
+    }
+    
+    /**
+     * Add AI analysis to emails
+     */
+    private function addAIAnalysisToEmails(array $emails): array
+    {
+        if (!$this->aiService->isAvailable()) {
+            return $emails;
+        }
+        
+        $analyzedEmails = [];
+        
+        foreach ($emails as $email) {
+            // Check if AI analysis is already cached
+            if ($this->emailCacheService->hasAIAnalysis($email)) {
+                $cachedAnalysis = $this->emailCacheService->getAIAnalysis($email);
+                $email['ai_analysis'] = $cachedAnalysis['analysis'];
+                $email['ai_cached_at'] = $cachedAnalysis['cached_at'];
+            } else {
+                // Generate new AI analysis
+                try {
+                    $analysis = $this->aiService->analyzeEmail($email);
+                    $email['ai_analysis'] = $analysis;
+                    $email['ai_cached_at'] = now()->toISOString();
+                    
+                    // Cache the analysis
+                    $this->emailCacheService->cacheAIAnalysis($email, $analysis);
+                } catch (Exception $e) {
+                    // If AI analysis fails, add a fallback
+                    $email['ai_analysis'] = [
+                        'summary' => 'AI analysis unavailable',
+                        'priority' => 'medium',
+                        'category' => 'personal',
+                        'action_items' => [],
+                        'sentiment' => 'neutral',
+                        'requires_response' => false,
+                        'error' => true
+                    ];
+                }
+            }
+            
+            $analyzedEmails[] = $email;
+        }
+        
+        return $analyzedEmails;
+    }
+    
+    /**
+     * Get AI service instance for external use
+     */
+    public function getAIService(): AIService
+    {
+        return $this->aiService;
     }
 }

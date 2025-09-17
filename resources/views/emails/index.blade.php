@@ -19,6 +19,19 @@
             transform: translateY(-2px);
             box-shadow: 0 4px 8px rgba(0,0,0,0.1);
         }
+        .email-card .card-body {
+            position: relative;
+        }
+        /* AI Priority Border Colors */
+        .email-card.priority-high {
+            border-left-color: #dc3545;
+        }
+        .email-card.priority-medium {
+            border-left-color: #ffc107;
+        }
+        .email-card.priority-low {
+            border-left-color: #28a745;
+        }
         .user-info {
             background: linear-gradient(135deg, #007bff, #0056b3);
             color: white;
@@ -42,6 +55,25 @@
         }
         .loading {
             display: none;
+        }
+        /* AI Analysis Styling */
+        .ai-summary {
+            background: linear-gradient(90deg, #f8f9fa, #e9ecef);
+            border-left: 3px solid #17a2b8;
+        }
+        .ai-priority-high {
+            animation: pulse-red 2s infinite;
+        }
+        @keyframes pulse-red {
+            0% { box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(220, 53, 69, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(220, 53, 69, 0); }
+        }
+        .bg-purple {
+            background-color: #6f42c1 !important;
+        }
+        .badge {
+            font-size: 0.75em;
         }
     </style>
 </head>
@@ -284,6 +316,86 @@
                 </div>
             @endif
 
+            @if(isset($aiStats) && count($emails) > 0)
+                <!-- AI Analysis Statistics -->
+                <div class="row mb-4">
+                    <div class="col-12">
+                        <div class="card">
+                            <div class="card-header">
+                                <h6 class="mb-0">
+                                    <i class="fas fa-robot me-2 text-info"></i>
+                                    AI Analysis Overview
+                                </h6>
+                            </div>
+                            <div class="card-body py-2">
+                                <div class="row text-center">
+                                    <div class="col-md-2">
+                                        <div class="mb-1">
+                                            <i class="fas fa-exclamation-triangle text-danger"></i>
+                                            <small class="d-block text-muted">High Priority</small>
+                                        </div>
+                                        <strong class="text-danger">{{ $aiStats['priority']['high'] ?? 0 }}</strong>
+                                    </div>
+                                    <div class="col-md-2">
+                                        <div class="mb-1">
+                                            <i class="fas fa-exclamation-circle text-warning"></i>
+                                            <small class="d-block text-muted">Medium Priority</small>
+                                        </div>
+                                        <strong class="text-warning">{{ $aiStats['priority']['medium'] ?? 0 }}</strong>
+                                    </div>
+                                    <div class="col-md-2">
+                                        <div class="mb-1">
+                                            <i class="fas fa-check-circle text-success"></i>
+                                            <small class="d-block text-muted">Low Priority</small>
+                                        </div>
+                                        <strong class="text-success">{{ $aiStats['priority']['low'] ?? 0 }}</strong>
+                                    </div>
+                                    <div class="col-md-2">
+                                        <div class="mb-1">
+                                            <i class="fas fa-reply text-primary"></i>
+                                            <small class="d-block text-muted">Needs Response</small>
+                                        </div>
+                                        <strong class="text-primary">{{ $aiStats['requires_response'] ?? 0 }}</strong>
+                                    </div>
+                                    <div class="col-md-2">
+                                        <div class="mb-1">
+                                            <i class="fas fa-database text-info"></i>
+                                            <small class="d-block text-muted">AI Cache Hit</small>
+                                        </div>
+                                        <strong class="text-info">{{ $aiStats['cache_stats']['cache_hit_rate'] ?? 0 }}%</strong>
+                                    </div>
+                                    <div class="col-md-2">
+                                        <div class="mb-1">
+                                            <i class="fas fa-chart-pie text-secondary"></i>
+                                            <small class="d-block text-muted">Total Analyzed</small>
+                                        </div>
+                                        <strong class="text-secondary">{{ $aiStats['total'] ?? 0 }}</strong>
+                                    </div>
+                                </div>
+                                @if(isset($aiStats['category']) && count($aiStats['category']) > 0)
+                                    <hr class="my-2">
+                                    <div class="row text-center">
+                                        <div class="col-12">
+                                            <small class="text-muted mb-2 d-block">
+                                                <i class="fas fa-tags me-1"></i>
+                                                Categories:
+                                            </small>
+                                            @foreach($aiStats['category'] as $category => $count)
+                                                @if($count > 0)
+                                                    <span class="badge bg-secondary me-1">
+                                                        {{ ucfirst($category) }}: {{ $count }}
+                                                    </span>
+                                                @endif
+                                            @endforeach
+                                        </div>
+                                    </div>
+                                @endif
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            @endif
+
             <!-- Emails Section -->
             <div class="row">
                 <div class="col-12">
@@ -305,11 +417,33 @@
                                 <div class="card email-card mb-3">
                                     <div class="card-body">
                                         <div class="row">
-                                            <div class="col-md-9">
-                                                <h5 class="card-title mb-2">
-                                                    <i class="fas fa-envelope me-2 text-primary"></i>
-                                                    {{ $email['subject'] }}
-                                                </h5>
+                                            <div class="col-md-8">
+                                                <div class="d-flex align-items-start mb-2">
+                                                    <h5 class="card-title mb-0 me-2">
+                                                        <i class="fas fa-envelope me-2 text-primary"></i>
+                                                        {{ $email['subject'] }}
+                                                    </h5>
+                                                    @if(isset($email['ai_analysis']))
+                                                        @php
+                                                            $priority = $email['ai_analysis']['priority'] ?? 'medium';
+                                                            $priorityColors = [
+                                                                'high' => 'danger',
+                                                                'medium' => 'warning', 
+                                                                'low' => 'success'
+                                                            ];
+                                                            $priorityIcons = [
+                                                                'high' => 'exclamation-triangle',
+                                                                'medium' => 'exclamation-circle',
+                                                                'low' => 'check-circle'
+                                                            ];
+                                                        @endphp
+                                                        <span class="badge bg-{{ $priorityColors[$priority] }} text-white">
+                                                            <i class="fas fa-{{ $priorityIcons[$priority] }} me-1"></i>
+                                                            {{ ucfirst($priority) }} Priority
+                                                        </span>
+                                                    @endif
+                                                </div>
+                                                
                                                 <p class="text-muted mb-2">
                                                     <i class="fas fa-user me-2"></i>
                                                     <strong>From:</strong> {{ $email['from'] }}
@@ -317,23 +451,100 @@
                                                         <small class="text-muted">({{ $email['from_email'] }})</small>
                                                     @endif
                                                 </p>
+                                                
+                                                @if(isset($email['ai_analysis']) && !empty($email['ai_analysis']['summary']))
+                                                    <div class="alert alert-light py-2 mb-2">
+                                                        <i class="fas fa-robot me-2 text-info"></i>
+                                                        <strong>AI Summary:</strong> {{ $email['ai_analysis']['summary'] }}
+                                                    </div>
+                                                @endif
+                                                
                                                 <p class="card-text">{{ $email['body_preview'] }}</p>
+                                                
+                                                @if(isset($email['ai_analysis']) && !empty($email['ai_analysis']['action_items']))
+                                                    <div class="mt-2">
+                                                        <small class="text-muted"><strong>Action Items:</strong></small>
+                                                        <ul class="list-unstyled mb-0 mt-1">
+                                                            @foreach($email['ai_analysis']['action_items'] as $item)
+                                                                <li class="text-muted">
+                                                                    <i class="fas fa-chevron-right me-1"></i>
+                                                                    {{ $item }}
+                                                                </li>
+                                                            @endforeach
+                                                        </ul>
+                                                    </div>
+                                                @endif
                                             </div>
-                                            <div class="col-md-3 text-md-end">
+                                            <div class="col-md-4 text-md-end">
                                                 <small class="text-muted">
                                                     <i class="fas fa-clock me-1"></i>
                                                     {{ \Carbon\Carbon::parse($email['received_date'])->format('M d, Y H:i') }}
                                                 </small>
                                                 <br>
-                                                <span class="badge bg-warning text-dark mt-2">
-                                                    <i class="fas fa-envelope me-1"></i>
-                                                    Unread
-                                                </span>
-                                                @if(isset($email['inference_classification']) && $email['inference_classification'] === 'focused')
-                                                    <span class="badge bg-info text-white mt-2 ms-1">
-                                                        <i class="fas fa-star me-1"></i>
-                                                        Focused
+                                                
+                                                <div class="mt-2">
+                                                    <span class="badge bg-warning text-dark">
+                                                        <i class="fas fa-envelope me-1"></i>
+                                                        Unread
                                                     </span>
+                                                    
+                                                    @if(isset($email['inference_classification']) && $email['inference_classification'] === 'focused')
+                                                        <span class="badge bg-info text-white ms-1">
+                                                            <i class="fas fa-star me-1"></i>
+                                                            Focused
+                                                        </span>
+                                                    @endif
+                                                </div>
+                                                
+                                                @if(isset($email['ai_analysis']))
+                                                    <div class="mt-2">
+                                                        @if(!empty($email['ai_analysis']['category']) && $email['ai_analysis']['category'] !== 'personal')
+                                                            @php
+                                                                $categoryColors = [
+                                                                    'work' => 'primary',
+                                                                    'newsletter' => 'secondary',
+                                                                    'promotional' => 'purple',
+                                                                    'support' => 'info'
+                                                                ];
+                                                                $categoryIcons = [
+                                                                    'work' => 'briefcase',
+                                                                    'newsletter' => 'newspaper',
+                                                                    'promotional' => 'tag',
+                                                                    'support' => 'headset'
+                                                                ];
+                                                            @endphp
+                                                            <span class="badge bg-{{ $categoryColors[$email['ai_analysis']['category']] ?? 'secondary' }} text-white d-block mb-1">
+                                                                <i class="fas fa-{{ $categoryIcons[$email['ai_analysis']['category']] ?? 'folder' }} me-1"></i>
+                                                                {{ ucfirst($email['ai_analysis']['category']) }}
+                                                            </span>
+                                                        @endif
+                                                        
+                                                        @if(isset($email['ai_analysis']['requires_response']) && $email['ai_analysis']['requires_response'])
+                                                            <span class="badge bg-danger text-white d-block mb-1">
+                                                                <i class="fas fa-reply me-1"></i>
+                                                                Response Needed
+                                                            </span>
+                                                        @endif
+                                                        
+                                                        @if(isset($email['ai_analysis']['sentiment']))
+                                                            @php
+                                                                $sentimentColors = [
+                                                                    'positive' => 'success',
+                                                                    'neutral' => 'secondary',
+                                                                    'negative' => 'danger'
+                                                                ];
+                                                                $sentimentIcons = [
+                                                                    'positive' => 'smile',
+                                                                    'neutral' => 'meh',
+                                                                    'negative' => 'frown'
+                                                                ];
+                                                            @endphp
+                                                            <span class="badge bg-{{ $sentimentColors[$email['ai_analysis']['sentiment']] }} text-white d-block">
+                                                                <i class="fas fa-{{ $sentimentIcons[$email['ai_analysis']['sentiment']] }} me-1"></i>
+                                                                {{ ucfirst($email['ai_analysis']['sentiment']) }}
+                                                            </span>
+                                                        @endif
+                                                    </div>
                                                 @endif
                                             </div>
                                         </div>
@@ -431,36 +642,139 @@
                                 hour: '2-digit', minute: '2-digit'
                             });
                             
+                            // Generate AI analysis badges and content
+                            let aiContent = '';
+                            let priorityBadge = '';
+                            let categoryBadges = '';
+                            let actionItems = '';
+                            
+                            if (email.ai_analysis) {
+                                const analysis = email.ai_analysis;
+                                
+                                // Priority badge
+                                if (analysis.priority) {
+                                    const priorityColors = {
+                                        'high': 'danger',
+                                        'medium': 'warning',
+                                        'low': 'success'
+                                    };
+                                    const priorityIcons = {
+                                        'high': 'exclamation-triangle',
+                                        'medium': 'exclamation-circle',
+                                        'low': 'check-circle'
+                                    };
+                                    priorityBadge = `<span class="badge bg-${priorityColors[analysis.priority]} text-white">
+                                        <i class="fas fa-${priorityIcons[analysis.priority]} me-1"></i>
+                                        ${analysis.priority.charAt(0).toUpperCase() + analysis.priority.slice(1)} Priority
+                                    </span>`;
+                                }
+                                
+                                // AI Summary
+                                if (analysis.summary) {
+                                    aiContent += `<div class="alert alert-light py-2 mb-2">
+                                        <i class="fas fa-robot me-2 text-info"></i>
+                                        <strong>AI Summary:</strong> ${analysis.summary}
+                                    </div>`;
+                                }
+                                
+                                // Action items
+                                if (analysis.action_items && analysis.action_items.length > 0) {
+                                    actionItems = `<div class="mt-2">
+                                        <small class="text-muted"><strong>Action Items:</strong></small>
+                                        <ul class="list-unstyled mb-0 mt-1">
+                                            ${analysis.action_items.map(item => 
+                                                `<li class="text-muted">
+                                                    <i class="fas fa-chevron-right me-1"></i>
+                                                    ${item}
+                                                </li>`
+                                            ).join('')}
+                                        </ul>
+                                    </div>`;
+                                }
+                                
+                                // Category and other badges
+                                if (analysis.category && analysis.category !== 'personal') {
+                                    const categoryColors = {
+                                        'work': 'primary',
+                                        'newsletter': 'secondary',
+                                        'promotional': 'purple',
+                                        'support': 'info'
+                                    };
+                                    const categoryIcons = {
+                                        'work': 'briefcase',
+                                        'newsletter': 'newspaper',
+                                        'promotional': 'tag',
+                                        'support': 'headset'
+                                    };
+                                    categoryBadges += `<span class="badge bg-${categoryColors[analysis.category] || 'secondary'} text-white d-block mb-1">
+                                        <i class="fas fa-${categoryIcons[analysis.category] || 'folder'} me-1"></i>
+                                        ${analysis.category.charAt(0).toUpperCase() + analysis.category.slice(1)}
+                                    </span>`;
+                                }
+                                
+                                if (analysis.requires_response) {
+                                    categoryBadges += `<span class="badge bg-danger text-white d-block mb-1">
+                                        <i class="fas fa-reply me-1"></i>
+                                        Response Needed
+                                    </span>`;
+                                }
+                                
+                                if (analysis.sentiment) {
+                                    const sentimentColors = {
+                                        'positive': 'success',
+                                        'neutral': 'secondary',
+                                        'negative': 'danger'
+                                    };
+                                    const sentimentIcons = {
+                                        'positive': 'smile',
+                                        'neutral': 'meh',
+                                        'negative': 'frown'
+                                    };
+                                    categoryBadges += `<span class="badge bg-${sentimentColors[analysis.sentiment]} text-white d-block">
+                                        <i class="fas fa-${sentimentIcons[analysis.sentiment]} me-1"></i>
+                                        ${analysis.sentiment.charAt(0).toUpperCase() + analysis.sentiment.slice(1)}
+                                    </span>`;
+                                }
+                            }
+                            
                             emailsHtml += `
                                 <div class="card email-card mb-3">
                                     <div class="card-body">
                                         <div class="row">
-                                            <div class="col-md-9">
-                                                <h5 class="card-title mb-2">
-                                                    <i class="fas fa-envelope me-2 text-primary"></i>
-                                                    ${email.subject}
-                                                </h5>
+                                            <div class="col-md-8">
+                                                <div class="d-flex align-items-start mb-2">
+                                                    <h5 class="card-title mb-0 me-2">
+                                                        <i class="fas fa-envelope me-2 text-primary"></i>
+                                                        ${email.subject}
+                                                    </h5>
+                                                    ${priorityBadge}
+                                                </div>
                                                 <p class="text-muted mb-2">
                                                     <i class="fas fa-user me-2"></i>
                                                     <strong>From:</strong> ${email.from}
                                                     ${email.from_email ? `<small class="text-muted">(${email.from_email})</small>` : ''}
                                                 </p>
+                                                ${aiContent}
                                                 <p class="card-text">${email.body_preview}</p>
+                                                ${actionItems}
                                             </div>
-                                            <div class="col-md-3 text-md-end">
+                                            <div class="col-md-4 text-md-end">
                                                 <small class="text-muted">
                                                     <i class="fas fa-clock me-1"></i>
                                                     ${receivedDate}
                                                 </small>
                                                 <br>
-                                                <span class="badge bg-warning text-dark mt-2">
-                                                    <i class="fas fa-envelope me-1"></i>
-                                                    Unread
-                                                </span>
-                                                ${email.inference_classification === 'focused' ? 
-                                                    '<span class="badge bg-info text-white mt-2 ms-1"><i class="fas fa-star me-1"></i>Focused</span>' : 
-                                                    ''
-                                                }
+                                                <div class="mt-2">
+                                                    <span class="badge bg-warning text-dark">
+                                                        <i class="fas fa-envelope me-1"></i>
+                                                        Unread
+                                                    </span>
+                                                    ${email.inference_classification === 'focused' ? 
+                                                        '<span class="badge bg-info text-white ms-1"><i class="fas fa-star me-1"></i>Focused</span>' : 
+                                                        ''
+                                                    }
+                                                </div>
+                                                ${categoryBadges ? `<div class="mt-2">${categoryBadges}</div>` : ''}
                                             </div>
                                         </div>
                                     </div>
