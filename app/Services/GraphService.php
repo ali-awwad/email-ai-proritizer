@@ -119,7 +119,7 @@ class GraphService
         $this->emailCacheService->clearCache();
     }
     
-    public function getUnreadEmails(int $limit = 5, bool $forceRefresh = false, bool $includeAI = true): array
+    public function getUnreadEmails(int $limit = 5, int $offset = 0, bool $forceRefresh = false, bool $includeAI = true): array
     {
         // Check cache first unless force refresh is requested
         if (!$forceRefresh && $this->emailCacheService->hasValidEmailCache()) {
@@ -151,6 +151,7 @@ class GraphService
                     'filter' => "isRead eq false",
                     'orderby' => "receivedDateTime desc",
                     'top' => $limit,
+                    'skip' => $offset,
                     'select' => "subject,from,receivedDateTime,bodyPreview,isRead,inferenceClassification"
                 ]
             );
@@ -220,7 +221,7 @@ class GraphService
         }
     }
     
-    private function makeGraphRequest(string $method, string $endpoint, string $accessToken, array $params = []): array
+    private function makeGraphRequest(string $method, string $endpoint, string $accessToken, array $params = [], string $jsonBody = null): array
     {
         $url = 'https://graph.microsoft.com/v1.0' . $endpoint;
         
@@ -229,10 +230,17 @@ class GraphService
                 '$filter' => $params['filter'] ?? null,
                 '$orderby' => $params['orderby'] ?? null,
                 '$top' => $params['top'] ?? null,
+                '$skip' => $params['skip'] ?? null,
                 '$select' => $params['select'] ?? null,
-            ]);
-            $queryString = preg_replace('/%24/', '$', $queryString); // Fix encoded $ signs
-            $url .= '?' . $queryString;
+            ], '', '&', PHP_QUERY_RFC3986);
+            
+            // Remove empty parameters
+            $queryString = preg_replace('/[^=&]*=(?:&|$)/', '', $queryString);
+            $queryString = rtrim($queryString, '&');
+            
+            if (!empty($queryString)) {
+                $url .= '?' . $queryString;
+            }
         }
         
         $headers = [
@@ -246,12 +254,23 @@ class GraphService
         curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
         curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $method);
         
+        // Add JSON body for PATCH, POST, PUT requests
+        if ($jsonBody && in_array($method, ['PATCH', 'POST', 'PUT'])) {
+            curl_setopt($ch, CURLOPT_POSTFIELDS, $jsonBody);
+        }
+        
         $response = curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
         
-        if ($httpCode !== 200) {
+        // Accept both 200 and 204 (No Content) as success
+        if (!in_array($httpCode, [200, 204])) {
             throw new Exception('Graph API request failed with status: ' . $httpCode . ' Response: ' . $response);
+        }
+        
+        // For DELETE requests or 204 responses, return empty array
+        if ($httpCode === 204 || empty($response)) {
+            return [];
         }
         
         return json_decode($response, true);
@@ -266,6 +285,7 @@ class GraphService
         $emails = [];
         foreach ($response['value'] as $email) {
             $emails[] = [
+                'id' => $email['id'] ?? '',
                 'subject' => $email['subject'] ?? 'No Subject',
                 'from' => $email['from']['emailAddress']['name'] ?? 'Unknown Sender',
                 'from_email' => $email['from']['emailAddress']['address'] ?? '',
@@ -373,5 +393,285 @@ class GraphService
     public function getAIService(): AIService
     {
         return $this->aiService;
+    }
+
+    /**
+     * Get total count of unread emails in inbox
+     */
+    public function getTotalEmailCount(): int
+    {
+        $accessToken = $this->getValidAccessToken();
+        
+        if (!$accessToken) {
+            throw new Exception('Not authenticated with Microsoft Graph');
+        }
+
+        try {
+            $response = $this->makeGraphRequest(
+                'GET',
+                '/me/mailFolders/inbox/messages/$count',
+                $accessToken,
+                [
+                    'filter' => "isRead eq false"
+                ]
+            );
+
+            // The response should be a simple number
+            return (int) $response;
+
+        } catch (Exception $e) {
+            // Fallback: return 0 if count fails
+            return 0;
+        }
+    }
+
+    /**
+     * Mark an email as read
+     */
+    public function markAsRead(string $emailId): bool
+    {
+        $accessToken = $this->getValidAccessToken();
+        
+        if (!$accessToken) {
+            throw new Exception('Not authenticated with Microsoft Graph');
+        }
+
+        try {
+            $this->makeGraphRequest(
+                'PATCH',
+                "/me/messages/{$emailId}",
+                $accessToken,
+                [],
+                json_encode(['isRead' => true])
+            );
+
+            // Clear cache to force refresh
+            $this->emailCacheService->clearEmailCache();
+
+            return true;
+
+        } catch (Exception $e) {
+            throw new Exception('Failed to mark email as read: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Mark an email as unread
+     */
+    public function markAsUnread(string $emailId): bool
+    {
+        $accessToken = $this->getValidAccessToken();
+        
+        if (!$accessToken) {
+            throw new Exception('Not authenticated with Microsoft Graph');
+        }
+
+        try {
+            $this->makeGraphRequest(
+                'PATCH',
+                "/me/messages/{$emailId}",
+                $accessToken,
+                [],
+                json_encode(['isRead' => false])
+            );
+
+            // Clear cache to force refresh
+            $this->emailCacheService->clearEmailCache();
+
+            return true;
+
+        } catch (Exception $e) {
+            throw new Exception('Failed to mark email as unread: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Mark an email as important
+     */
+    public function markAsImportant(string $emailId): bool
+    {
+        $accessToken = $this->getValidAccessToken();
+        
+        if (!$accessToken) {
+            throw new Exception('Not authenticated with Microsoft Graph');
+        }
+
+        try {
+            $this->makeGraphRequest(
+                'PATCH',
+                "/me/messages/{$emailId}",
+                $accessToken,
+                [],
+                json_encode(['importance' => 'high'])
+            );
+
+            return true;
+
+        } catch (Exception $e) {
+            throw new Exception('Failed to mark email as important: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Archive an email (move to Archive folder)
+     */
+    public function archiveEmail(string $emailId): bool
+    {
+        $accessToken = $this->getValidAccessToken();
+        
+        if (!$accessToken) {
+            throw new Exception('Not authenticated with Microsoft Graph');
+        }
+
+        try {
+            // First, get the Archive folder ID
+            $foldersResponse = $this->makeGraphRequest(
+                'GET',
+                '/me/mailFolders',
+                $accessToken
+            );
+
+            $archiveFolderId = null;
+            foreach ($foldersResponse['value'] as $folder) {
+                if ($folder['displayName'] === 'Archive' || $folder['wellKnownName'] === 'archive') {
+                    $archiveFolderId = $folder['id'];
+                    break;
+                }
+            }
+
+            if (!$archiveFolderId) {
+                throw new Exception('Archive folder not found');
+            }
+
+            // Move the email to Archive folder
+            $this->makeGraphRequest(
+                'POST',
+                "/me/messages/{$emailId}/move",
+                $accessToken,
+                [],
+                json_encode(['destinationId' => $archiveFolderId])
+            );
+
+            // Clear cache to force refresh
+            $this->emailCacheService->clearEmailCache();
+
+            return true;
+
+        } catch (Exception $e) {
+            throw new Exception('Failed to archive email: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Delete an email
+     */
+    public function deleteEmail(string $emailId): bool
+    {
+        $accessToken = $this->getValidAccessToken();
+        
+        if (!$accessToken) {
+            throw new Exception('Not authenticated with Microsoft Graph');
+        }
+
+        try {
+            $this->makeGraphRequest(
+                'DELETE',
+                "/me/messages/{$emailId}",
+                $accessToken
+            );
+
+            // Clear cache to force refresh
+            $this->emailCacheService->clearEmailCache();
+
+            return true;
+
+        } catch (Exception $e) {
+            throw new Exception('Failed to delete email: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Get detailed email information including full body content
+     */
+    public function getEmailDetails(string $emailId): array
+    {
+        $accessToken = $this->getValidAccessToken();
+        
+        if (!$accessToken) {
+            throw new Exception('Not authenticated with Microsoft Graph');
+        }
+
+        try {
+            $response = $this->makeGraphRequest(
+                'GET',
+                "/me/messages/{$emailId}",
+                $accessToken,
+                [
+                    'select' => 'id,subject,from,toRecipients,receivedDateTime,body,bodyPreview,isRead,importance,inferenceClassification,hasAttachments,attachments'
+                ]
+            );
+
+            // Format the detailed email data
+            $emailDetails = [
+                'id' => $response['id'] ?? '',
+                'subject' => $response['subject'] ?? 'No Subject',
+                'from' => $response['from']['emailAddress']['name'] ?? 'Unknown Sender',
+                'from_email' => $response['from']['emailAddress']['address'] ?? '',
+                'to_recipients' => [],
+                'received_date' => $response['receivedDateTime'] ?? '',
+                'body_content' => $response['body']['content'] ?? '',
+                'body_type' => $response['body']['contentType'] ?? 'text',
+                'body_preview' => $response['bodyPreview'] ?? '',
+                'is_read' => $response['isRead'] ?? false,
+                'importance' => $response['importance'] ?? 'normal',
+                'inference_classification' => $response['inferenceClassification'] ?? null,
+                'has_attachments' => $response['hasAttachments'] ?? false,
+                'attachments' => []
+            ];
+
+            // Format recipients
+            if (isset($response['toRecipients'])) {
+                foreach ($response['toRecipients'] as $recipient) {
+                    $emailDetails['to_recipients'][] = [
+                        'name' => $recipient['emailAddress']['name'] ?? '',
+                        'email' => $recipient['emailAddress']['address'] ?? ''
+                    ];
+                }
+            }
+
+            // Get attachments if they exist
+            if ($emailDetails['has_attachments']) {
+                try {
+                    $attachmentsResponse = $this->makeGraphRequest(
+                        'GET',
+                        "/me/messages/{$emailId}/attachments",
+                        $accessToken,
+                        [
+                            'select' => 'id,name,contentType,size,isInline'
+                        ]
+                    );
+
+                    if (isset($attachmentsResponse['value'])) {
+                        foreach ($attachmentsResponse['value'] as $attachment) {
+                            $emailDetails['attachments'][] = [
+                                'id' => $attachment['id'] ?? '',
+                                'name' => $attachment['name'] ?? 'Unknown',
+                                'content_type' => $attachment['contentType'] ?? '',
+                                'size' => $attachment['size'] ?? 0,
+                                'is_inline' => $attachment['isInline'] ?? false
+                            ];
+                        }
+                    }
+                } catch (Exception $e) {
+                    // Attachments failed to load, but continue with email details
+                    error_log('Failed to load attachments for email ' . $emailId . ': ' . $e->getMessage());
+                }
+            }
+
+            return $emailDetails;
+
+        } catch (Exception $e) {
+            throw new Exception('Failed to get email details: ' . $e->getMessage());
+        }
     }
 }

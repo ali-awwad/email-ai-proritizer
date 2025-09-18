@@ -3,208 +3,103 @@
 namespace App\Http\Controllers;
 
 use App\Services\GraphService;
+use App\Services\AIService;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Log;
 use Exception;
 
 class EmailController extends Controller
 {
     private $graphService;
+    private $aiService;
     
-    public function __construct(GraphService $graphService)
+    public function __construct(GraphService $graphService, AIService $aiService)
     {
         $this->graphService = $graphService;
+        $this->aiService = $aiService;
     }
     
     public function index()
     {
         try {
             if (!$this->graphService->isAuthenticated()) {
-                // Show the login page instead of redirecting
                 return view('emails.index', [
                     'emails' => [], 
-                    'userInfo' => null, 
-                    'cacheStats' => null,
-                    'aiStats' => null
+                    'userInfo' => null
                 ]);
             }
             
-            // Get user info and emails
+            // Get user info
             $userInfo = $this->graphService->getUserInfo();
+
+            // Get last 10 unread emails from inbox only
+            $emails = $this->graphService->getUnreadEmails(10, 0);
             
-            // Try to get emails
-            try {
-                $emails = $this->graphService->getUnreadEmails(5);
-            } catch (Exception $emailError) {
-                // If emails fail, still show the page with user info and error
-                $emails = [];
+            // Process each email with AI analysis
+            foreach ($emails as &$email) {
+                try {
+                    // Get AI analysis for each email
+                    $email['ai_analysis'] = $this->aiService->analyzeEmail($email);
+                } catch (Exception $e) {
+                    // If AI analysis fails, continue without it
+                    $email['ai_analysis'] = [
+                        'summary' => 'AI analysis unavailable',
+                        'priority' => 'medium',
+                        'category' => 'personal',
+                        'requires_response' => false,
+                        'sentiment' => 'neutral',
+                        'action_items' => []
+                    ];
+                }
             }
             
-            // Get cache statistics
-            $cacheStats = $this->graphService->getCacheService()->getCacheStats();
-            
-            // Get AI analysis statistics if emails exist
-            $aiStats = null;
-            if (count($emails) > 0) {
-                $aiStats = $this->graphService->getAIService()->getAnalysisStats($emails);
-                $aiStats['cache_stats'] = $this->graphService->getCacheService()->getAIAnalysisStats($emails);
-            }
-            
-            return view('emails.index', compact('emails', 'userInfo', 'cacheStats', 'aiStats'));
+            return view('emails.index', [
+                'emails' => $emails,
+                'userInfo' => $userInfo
+            ]);
             
         } catch (Exception $e) {
-            // Clear authentication and show login page instead of redirect
-            $this->graphService->clearAuthentication();
             return view('emails.index', [
-                'emails' => [], 
-                'userInfo' => null, 
-                'cacheStats' => null,
-                'aiStats' => null
-            ])->with('error', 'Authentication expired. Please sign in again.');
+                'emails' => [],
+                'userInfo' => null,
+                'error' => 'Failed to load emails: ' . $e->getMessage()
+            ]);
         }
     }
     
     public function authenticate()
     {
-        try {
-            $authUrl = $this->graphService->getAuthorizationUrl();
-            return redirect($authUrl);
-        } catch (Exception $e) {
-            return redirect()->route('emails.index')
-                ->with('error', 'Failed to initiate authentication: ' . $e->getMessage());
-        }
+        $authUrl = $this->graphService->getAuthorizationUrl();
+        return redirect($authUrl);
     }
     
     public function callback(Request $request)
     {
-        $code = $request->get('code');
-        $state = $request->get('state');
-        $error = $request->get('error');
-        $errorDescription = $request->get('error_description');
-        
-        if ($error) {
-            return redirect()->route('emails.index')
-                ->with('error', 'Authentication failed: ' . $error . ($errorDescription ? ' - ' . $errorDescription : ''));
-        }
-        
-        if (!$code) {
-            return redirect()->route('emails.index')
-                ->with('error', 'No authorization code received.');
-        }
-        
         try {
+            $code = $request->get('code');
+            $state = $request->get('state');
+            
+            if (!$code) {
+                return redirect()->route('emails.index')->with('error', 'Authorization failed');
+            }
+            
             $success = $this->graphService->handleCallback($code, $state);
             
             if ($success) {
-                return redirect()->route('emails.index')
-                    ->with('success', 'Successfully authenticated with Microsoft Graph!');
+                return redirect()->route('emails.index')->with('success', 'Authentication successful');
             } else {
-                return redirect()->route('emails.index')
-                    ->with('error', 'Failed to authenticate with Microsoft Graph.');
+                return redirect()->route('emails.index')->with('error', 'Authentication failed');
             }
-            
         } catch (Exception $e) {
-            return redirect()->route('emails.index')
-                ->with('error', 'Authentication error: ' . $e->getMessage());
+            return redirect()->route('emails.index')->with('error', 'Authentication error: ' . $e->getMessage());
         }
     }
     
-    public function logout()
+    public function logout(Request $request)
     {
         $this->graphService->clearAuthentication();
+        $request->session()->invalidate();
+        $request->session()->regenerateToken();
         
-        return redirect()->route('emails.index')
-            ->with('success', 'Successfully logged out.');
-    }
-    
-    public function refresh()
-    {
-        try {
-            if (!$this->graphService->isAuthenticated()) {
-                return redirect()->route('auth.microsoft')
-                    ->with('error', 'Please authenticate first.');
-            }
-            
-            // Force refresh from API (bypass cache)
-            $emails = $this->graphService->getUnreadEmails(5, true);
-            $cacheStats = $this->graphService->getCacheService()->getCacheStats();
-            
-            // Get AI analysis statistics
-            $aiStats = null;
-            if (count($emails) > 0) {
-                $aiStats = $this->graphService->getAIService()->getAnalysisStats($emails);
-                $aiStats['cache_stats'] = $this->graphService->getCacheService()->getAIAnalysisStats($emails);
-            }
-            
-            return response()->json([
-                'success' => true,
-                'emails' => $emails,
-                'count' => count($emails),
-                'cache_stats' => $cacheStats,
-                'ai_stats' => $aiStats
-            ]);
-            
-        } catch (Exception $e) {
-            return response()->json([
-                'success' => false,
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
-    
-    /**
-     * Clear all cache for the current user
-     */
-    public function clearCache()
-    {
-        try {
-            if (!$this->graphService->isAuthenticated()) {
-                return response()->json([
-                    'success' => false,
-                    'error' => 'Not authenticated'
-                ], 401);
-            }
-            
-            $this->graphService->getCacheService()->clearCache();
-            
-            return response()->json([
-                'success' => true,
-                'message' => 'Cache cleared successfully'
-            ]);
-            
-        } catch (Exception $e) {
-            return response()->json([
-                'success' => false,
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
-    
-    /**
-     * Get cache statistics
-     */
-    public function cacheStats()
-    {
-        try {
-            if (!$this->graphService->isAuthenticated()) {
-                return response()->json([
-                    'success' => false,
-                    'error' => 'Not authenticated'
-                ], 401);
-            }
-            
-            $cacheStats = $this->graphService->getCacheService()->getCacheStats();
-            
-            return response()->json([
-                'success' => true,
-                'cache_stats' => $cacheStats
-            ]);
-            
-        } catch (Exception $e) {
-            return response()->json([
-                'success' => false,
-                'error' => $e->getMessage()
-            ], 500);
-        }
+        return redirect()->route('emails.index')->with('success', 'Logged out successfully');
     }
 }

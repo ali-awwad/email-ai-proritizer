@@ -4,428 +4,126 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    <title>Microsoft Graph - Unread Emails</title>
+    <title>Daily Email Summary</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <style>
-        body {
-            background-color: #f8f9fa;
-        }
-        .email-card {
-            transition: all 0.3s ease;
-            border-left: 4px solid #007bff;
-        }
-        .email-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-        }
-        .email-card .card-body {
-            position: relative;
-        }
-        /* AI Priority Border Colors */
-        .email-card.priority-high {
-            border-left-color: #dc3545;
-        }
-        .email-card.priority-medium {
-            border-left-color: #ffc107;
-        }
-        .email-card.priority-low {
-            border-left-color: #28a745;
-        }
-        .user-info {
-            background: linear-gradient(135deg, #007bff, #0056b3);
-            color: white;
-            border-radius: 10px;
-            padding: 20px;
-            margin-bottom: 30px;
-        }
-        .refresh-btn {
-            position: fixed;
-            bottom: 30px;
-            right: 30px;
-            border-radius: 50%;
-            width: 60px;
-            height: 60px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-        }
-        .no-emails {
-            text-align: center;
-            padding: 60px 20px;
-            color: #6c757d;
-        }
-        .loading {
-            display: none;
-        }
-        /* AI Analysis Styling */
-        .ai-summary {
-            background: linear-gradient(90deg, #f8f9fa, #e9ecef);
-            border-left: 3px solid #17a2b8;
-        }
-        .ai-priority-high {
-            animation: pulse-red 2s infinite;
-        }
-        @keyframes pulse-red {
-            0% { box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.7); }
-            70% { box-shadow: 0 0 0 10px rgba(220, 53, 69, 0); }
-            100% { box-shadow: 0 0 0 0 rgba(220, 53, 69, 0); }
-        }
-        .bg-purple {
-            background-color: #6f42c1 !important;
-        }
-        .badge {
-            font-size: 0.75em;
-        }
-    </style>
 </head>
 <body>
-    <div class="container py-5">
-        <!-- Header -->
-        <div class="row mb-4">
-            <div class="col-12">
-                <h1 class="display-4 text-center mb-0">
-                    <i class="fas fa-envelope-open-text text-primary me-3"></i>
-                    Microsoft Graph Email Reader
-                </h1>
-                <p class="text-center text-muted mt-2">Proof of Concept - Last 5 Unread Emails</p>
-            </div>
-        </div>
-
-        @if(session('error'))
-            <div class="alert alert-danger alert-dismissible fade show" role="alert">
-                <i class="fas fa-exclamation-triangle me-2"></i>
-                {{ session('error') }}
-                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-            </div>
-        @endif
-
-        @if(session('success'))
-            <div class="alert alert-success alert-dismissible fade show" role="alert">
-                <i class="fas fa-check-circle me-2"></i>
-                {{ session('success') }}
-                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-            </div>
-        @endif
-
-        @if(isset($userInfo))
-            <!-- User Info -->
-            <div class="user-info">
-                <div class="row align-items-center">
-                    <div class="col-md-8">
-                        <h3 class="mb-1">
-                            <i class="fas fa-user-circle me-2"></i>
-                            Welcome, {{ $userInfo['display_name'] }}!
-                        </h3>
-                        <p class="mb-0 opacity-75">
-                            <i class="fas fa-envelope me-2"></i>
-                            {{ $userInfo['email'] }}
-                        </p>
-                        @if(isset($userInfo['user_type']) && $userInfo['user_type'] !== 'Member')
-                            <div class="mt-2">
-                                <small class="badge bg-warning text-dark">
-                                    <i class="fas fa-exclamation-triangle me-1"></i>
-                                    External/Guest Account Detected
-                                </small>
-                            </div>
-                        @endif
-                        @if(isset($userInfo['account_enabled']) && !$userInfo['account_enabled'])
-                            <div class="mt-1">
-                                <small class="badge bg-danger">
-                                    <i class="fas fa-times me-1"></i>
-                                    Account not fully enabled
-                                </small>
-                            </div>
-                        @endif
-                    </div>
-                    <div class="col-md-4 text-md-end">
-                        <form method="POST" action="{{ route('auth.logout') }}" class="d-inline">
-                            @csrf
-                            <button type="submit" class="btn btn-light">
-                                <i class="fas fa-sign-out-alt me-2"></i>
-                                Logout
-                            </button>
-                        </form>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Cache Status -->
-            @if(isset($cacheStats))
-                <div class="card mb-4">
-                    <div class="card-header">
-                        <h5 class="mb-0">
-                            <i class="fas fa-database me-2"></i>
-                            Cache Status
-                        </h5>
-                    </div>
-                    <div class="card-body">
-                        <div class="row">
-                            <div class="col-md-6">
-                                <h6>Email Cache</h6>
-                                @if($cacheStats['emails']['cached'])
-                                    <div class="d-flex align-items-center mb-2">
-                                        <span class="badge bg-success me-2">
-                                            <i class="fas fa-check"></i> Cached
-                                        </span>
-                                        <small class="text-muted">{{ $cacheStats['emails']['count'] }} emails</small>
-                                    </div>
-                                    <small class="text-muted">
-                                        Cached: {{ \Carbon\Carbon::parse($cacheStats['emails']['cached_at'])->format('M d, H:i:s') }}
-                                        <br>
-                                        Expires: {{ \Carbon\Carbon::parse($cacheStats['emails']['expires_at'])->format('M d, H:i:s') }}
-                                    </small>
-                                @else
-                                    <span class="badge bg-secondary">
-                                        <i class="fas fa-times"></i> Not Cached
-                                    </span>
-                                @endif
-                            </div>
-                            <div class="col-md-6">
-                                <h6>User Info Cache</h6>
-                                @if($cacheStats['user_info']['cached'])
-                                    <div class="d-flex align-items-center mb-2">
-                                        <span class="badge bg-success me-2">
-                                            <i class="fas fa-check"></i> Cached
-                                        </span>
-                                    </div>
-                                    <small class="text-muted">
-                                        Cached: {{ \Carbon\Carbon::parse($cacheStats['user_info']['cached_at'])->format('M d, H:i:s') }}
-                                        <br>
-                                        Expires: {{ \Carbon\Carbon::parse($cacheStats['user_info']['expires_at'])->format('M d, H:i:s') }}
-                                    </small>
-                                @else
-                                    <span class="badge bg-secondary">
-                                        <i class="fas fa-times"></i> Not Cached
-                                    </span>
-                                @endif
-                            </div>
-                        </div>
-                        <div class="row mt-3">
-                            <div class="col-12">
-                                <small class="text-muted">
-                                    <i class="fas fa-clock me-1"></i>
-                                    Cache TTL: {{ $cacheStats['cache_ttl_seconds'] }} seconds ({{ round($cacheStats['cache_ttl_seconds'] / 60, 1) }} minutes)
-                                </small>
-                            </div>
-                        </div>
-                        <div class="row mt-2">
-                            <div class="col-12">
-                                <button class="btn btn-sm btn-outline-warning me-2" onclick="clearCache()">
-                                    <i class="fas fa-trash me-1"></i>
-                                    Clear Cache
-                                </button>
-                                <button class="btn btn-sm btn-outline-info" onclick="refreshCacheStats()">
-                                    <i class="fas fa-sync me-1"></i>
-                                    Refresh Stats
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            @endif
-
-            @if(isset($cacheStats))
-                <!-- Cache Status -->
-                <div class="row mb-4">
-                    <div class="col-12">
-                        <div class="card">
-                            <div class="card-header d-flex justify-content-between align-items-center">
-                                <h6 class="mb-0">
-                                    <i class="fas fa-database me-2 text-success"></i>
-                                    Cache Status
-                                </h6>
-                                <div>
-                                    <button class="btn btn-sm btn-outline-primary me-2" onclick="refreshCacheStats()">
-                                        <i class="fas fa-sync-alt" id="cache-refresh-icon"></i>
-                                    </button>
-                                    <button class="btn btn-sm btn-outline-warning" onclick="clearCache()">
-                                        <i class="fas fa-trash me-1"></i>
-                                        Clear Cache
-                                    </button>
-                                </div>
-                            </div>
-                            <div class="card-body py-2" id="cache-status">
-                                <div class="row text-center">
-                                    <div class="col-md-3">
-                                        <div class="mb-1">
-                                            <i class="fas fa-envelope text-primary"></i>
-                                            <small class="d-block text-muted">Emails Cache</small>
-                                        </div>
-                                        <span class="badge {{ $cacheStats['emails']['cached'] ? 'bg-success' : 'bg-secondary' }}">
-                                            {{ $cacheStats['emails']['cached'] ? 'Cached' : 'Not Cached' }}
-                                        </span>
-                                        @if($cacheStats['emails']['cached'])
-                                            <small class="d-block text-muted mt-1">
-                                                {{ $cacheStats['emails']['count'] }} emails
-                                            </small>
-                                        @endif
-                                    </div>
-                                    <div class="col-md-3">
-                                        <div class="mb-1">
-                                            <i class="fas fa-user text-info"></i>
-                                            <small class="d-block text-muted">User Info Cache</small>
-                                        </div>
-                                        <span class="badge {{ $cacheStats['user_info']['cached'] ? 'bg-success' : 'bg-secondary' }}">
-                                            {{ $cacheStats['user_info']['cached'] ? 'Cached' : 'Not Cached' }}
-                                        </span>
-                                    </div>
-                                    <div class="col-md-3">
-                                        <div class="mb-1">
-                                            <i class="fas fa-clock text-warning"></i>
-                                            <small class="d-block text-muted">Cache TTL</small>
-                                        </div>
-                                        <small class="text-muted">{{ $cacheStats['cache_ttl_seconds'] }}s</small>
-                                    </div>
-                                    <div class="col-md-3">
-                                        <div class="mb-1">
-                                            <i class="fas fa-hourglass-half text-danger"></i>
-                                            <small class="d-block text-muted">Email Cache Expires</small>
-                                        </div>
-                                        @if($cacheStats['emails']['cached'])
-                                            <small class="text-muted" id="cache-expires">
-                                                {{ \Carbon\Carbon::parse($cacheStats['emails']['expires_at'])->format('H:i:s') }}
-                                            </small>
-                                        @else
-                                            <small class="text-muted">N/A</small>
-                                        @endif
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            @endif
-
-            @if(count($emails) == 0)
-                <!-- Account Type Help -->
-                <div class="alert alert-info" role="alert">
-                    <h5 class="alert-heading">
-                        <i class="fas fa-info-circle me-2"></i>
-                        Unable to Access Mailbox
-                    </h5>
-                    <p class="mb-2">The current account doesn't have access to an Exchange Online mailbox. This can happen when:</p>
-                    <ul class="mb-2">
-                        <li>You're using a guest/external account in an Azure AD tenant</li>
-                        <li>The account doesn't have an active Exchange Online license</li>
-                        <li>The mailbox is hosted on-premises (not in the cloud)</li>
-                    </ul>
-                    <hr>
-                    <p class="mb-0">
-                        <strong>Try signing in with:</strong> A personal Microsoft account (@outlook.com, @hotmail.com, @live.com) 
-                        or an organizational account with Exchange Online access.
+<div class="container-fluid">
+    <div class="row justify-content-center">
+        <div class="col-md-10">
+            @if(isset($userInfo))
+                <!-- Header Section -->
+                <div class="text-center mb-4">
+                    <h1 class="display-4 mb-2">
+                        <i class="fas fa-envelope-open-text text-primary me-3"></i>
+                        Daily Email Summary
+                    </h1>
+                    <p class="lead text-muted">
+                        Good morning! Here's your AI-powered summary of today's important emails.
                     </p>
-                </div>
-            @endif
-
-            @if(isset($aiStats) && count($emails) > 0)
-                <!-- AI Analysis Statistics -->
-                <div class="row mb-4">
-                    <div class="col-12">
-                        <div class="card">
-                            <div class="card-header">
-                                <h6 class="mb-0">
-                                    <i class="fas fa-robot me-2 text-info"></i>
-                                    AI Analysis Overview
-                                </h6>
-                            </div>
-                            <div class="card-body py-2">
-                                <div class="row text-center">
-                                    <div class="col-md-2">
-                                        <div class="mb-1">
-                                            <i class="fas fa-exclamation-triangle text-danger"></i>
-                                            <small class="d-block text-muted">High Priority</small>
-                                        </div>
-                                        <strong class="text-danger">{{ $aiStats['priority']['high'] ?? 0 }}</strong>
-                                    </div>
-                                    <div class="col-md-2">
-                                        <div class="mb-1">
-                                            <i class="fas fa-exclamation-circle text-warning"></i>
-                                            <small class="d-block text-muted">Medium Priority</small>
-                                        </div>
-                                        <strong class="text-warning">{{ $aiStats['priority']['medium'] ?? 0 }}</strong>
-                                    </div>
-                                    <div class="col-md-2">
-                                        <div class="mb-1">
-                                            <i class="fas fa-check-circle text-success"></i>
-                                            <small class="d-block text-muted">Low Priority</small>
-                                        </div>
-                                        <strong class="text-success">{{ $aiStats['priority']['low'] ?? 0 }}</strong>
-                                    </div>
-                                    <div class="col-md-2">
-                                        <div class="mb-1">
-                                            <i class="fas fa-reply text-primary"></i>
-                                            <small class="d-block text-muted">Needs Response</small>
-                                        </div>
-                                        <strong class="text-primary">{{ $aiStats['requires_response'] ?? 0 }}</strong>
-                                    </div>
-                                    <div class="col-md-2">
-                                        <div class="mb-1">
-                                            <i class="fas fa-database text-info"></i>
-                                            <small class="d-block text-muted">AI Cache Hit</small>
-                                        </div>
-                                        <strong class="text-info">{{ $aiStats['cache_stats']['cache_hit_rate'] ?? 0 }}%</strong>
-                                    </div>
-                                    <div class="col-md-2">
-                                        <div class="mb-1">
-                                            <i class="fas fa-chart-pie text-secondary"></i>
-                                            <small class="d-block text-muted">Total Analyzed</small>
-                                        </div>
-                                        <strong class="text-secondary">{{ $aiStats['total'] ?? 0 }}</strong>
-                                    </div>
+                    <div class="row mt-4">
+                        <div class="col-md-4">
+                            <div class="card border-0 bg-light">
+                                <div class="card-body text-center py-3">
+                                    <h5 class="text-primary mb-1">{{ count($emails) }}</h5>
+                                    <small class="text-muted">Unread Emails</small>
                                 </div>
-                                @if(isset($aiStats['category']) && count($aiStats['category']) > 0)
-                                    <hr class="my-2">
-                                    <div class="row text-center">
-                                        <div class="col-12">
-                                            <small class="text-muted mb-2 d-block">
-                                                <i class="fas fa-tags me-1"></i>
-                                                Categories:
-                                            </small>
-                                            @foreach($aiStats['category'] as $category => $count)
-                                                @if($count > 0)
-                                                    <span class="badge bg-secondary me-1">
-                                                        {{ ucfirst($category) }}: {{ $count }}
-                                                    </span>
-                                                @endif
-                                            @endforeach
-                                        </div>
-                                    </div>
-                                @endif
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="card border-0 bg-light">
+                                <div class="card-body text-center py-3">
+                                    @php
+                                        $highPriorityCount = collect($emails)->filter(function($email) {
+                                            return isset($email['ai_analysis']['priority']) && $email['ai_analysis']['priority'] === 'high';
+                                        })->count();
+                                    @endphp
+                                    <h5 class="text-danger mb-1">{{ $highPriorityCount }}</h5>
+                                    <small class="text-muted">High Priority</small>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="card border-0 bg-light">
+                                <div class="card-body text-center py-3">
+                                    @php
+                                        $responseNeededCount = collect($emails)->filter(function($email) {
+                                            return isset($email['ai_analysis']['requires_response']) && $email['ai_analysis']['requires_response'];
+                                        })->count();
+                                    @endphp
+                                    <h5 class="text-warning mb-1">{{ $responseNeededCount }}</h5>
+                                    <small class="text-muted">Need Response</small>
+                                </div>
                             </div>
                         </div>
                     </div>
                 </div>
-            @endif
 
-            <!-- Emails Section -->
-            <div class="row">
-                <div class="col-12">
-                    <div class="d-flex justify-content-between align-items-center mb-4">
-                        <h2 class="h3 mb-0">
-                            <i class="fas fa-inbox me-2 text-primary"></i>
-                            Unread Emails
-                            <span class="badge bg-primary ms-2" id="email-count">{{ count($emails) }}</span>
-                        </h2>
-                        <button class="btn btn-outline-primary" onclick="refreshEmails()">
-                            <i class="fas fa-sync-alt me-2" id="refresh-icon"></i>
-                            Refresh
-                        </button>
-                    </div>
-
-                    <div id="emails-container">
-                        @if(count($emails) > 0)
-                            @foreach($emails as $email)
-                                <div class="card email-card mb-3">
+                <!-- Email Summary Cards -->
+                <div class="row">
+                    @if(count($emails) > 0)
+                        @foreach($emails as $index => $email)
+                            <div class="col-12 mb-4">
+                                <div class="card h-100 shadow-sm border-0">
                                     <div class="card-body">
                                         <div class="row">
+                                            <!-- Email Content -->
                                             <div class="col-md-8">
-                                                <div class="d-flex align-items-start mb-2">
-                                                    <h5 class="card-title mb-0 me-2">
-                                                        <i class="fas fa-envelope me-2 text-primary"></i>
-                                                        {{ $email['subject'] }}
-                                                    </h5>
-                                                    @if(isset($email['ai_analysis']))
+                                                <div class="d-flex align-items-center mb-3">
+                                                    <span class="badge badge-lg me-3 fs-6" style="background: linear-gradient(45deg, #007bff, #0056b3); color: white; padding: 8px 12px;">
+                                                        #{{ $index + 1 }}
+                                                    </span>
+                                                    <h5 class="card-title mb-0 fw-bold">{{ $email['subject'] }}</h5>
+                                                </div>
+                                                
+                                                <div class="mb-3">
+                                                    <p class="text-muted mb-1">
+                                                        <i class="fas fa-user me-2"></i>
+                                                        <strong>From:</strong> {{ $email['from'] }}
+                                                    </p>
+                                                    <p class="text-muted mb-0">
+                                                        <i class="fas fa-clock me-2"></i>
+                                                        <strong>Received:</strong> {{ \Carbon\Carbon::parse($email['received_date'])->format('M j, Y g:i A') }}
+                                                    </p>
+                                                </div>
+
+                                                @if(isset($email['ai_analysis']['summary']))
+                                                    <div class="alert alert-info border-0" style="background: linear-gradient(90deg, #e3f2fd, #f8f9fa);">
+                                                        <div class="d-flex align-items-start">
+                                                            <i class="fas fa-robot text-info me-2 mt-1"></i>
+                                                            <div>
+                                                                <strong class="text-info">AI Summary:</strong>
+                                                                <p class="mb-0 mt-1">{{ $email['ai_analysis']['summary'] }}</p>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                @endif
+
+                                                @if(isset($email['ai_analysis']['action_items']) && count($email['ai_analysis']['action_items']) > 0)
+                                                    <div class="mt-3">
+                                                        <h6 class="text-primary mb-2">
+                                                            <i class="fas fa-tasks me-1"></i>
+                                                            Action Items:
+                                                        </h6>
+                                                        <ul class="list-unstyled mb-0">
+                                                            @foreach($email['ai_analysis']['action_items'] as $item)
+                                                                <li class="mb-1">
+                                                                    <i class="fas fa-chevron-right text-primary me-2"></i>
+                                                                    {{ $item }}
+                                                                </li>
+                                                            @endforeach
+                                                        </ul>
+                                                    </div>
+                                                @endif
+                                            </div>
+
+                                            <!-- Priority & Metadata -->
+                                            <div class="col-md-4">
+                                                <div class="text-end">
+                                                    @if(isset($email['ai_analysis']['priority']))
                                                         @php
-                                                            $priority = $email['ai_analysis']['priority'] ?? 'medium';
+                                                            $priority = $email['ai_analysis']['priority'];
                                                             $priorityColors = [
                                                                 'high' => 'danger',
                                                                 'medium' => 'warning', 
@@ -437,97 +135,34 @@
                                                                 'low' => 'check-circle'
                                                             ];
                                                         @endphp
-                                                        <span class="badge bg-{{ $priorityColors[$priority] }} text-white">
+                                                        <span class="badge bg-{{ $priorityColors[$priority] }} fs-6 mb-2" style="padding: 8px 16px;">
                                                             <i class="fas fa-{{ $priorityIcons[$priority] }} me-1"></i>
                                                             {{ ucfirst($priority) }} Priority
                                                         </span>
                                                     @endif
-                                                </div>
-                                                
-                                                <p class="text-muted mb-2">
-                                                    <i class="fas fa-user me-2"></i>
-                                                    <strong>From:</strong> {{ $email['from'] }}
-                                                    @if($email['from_email'])
-                                                        <small class="text-muted">({{ $email['from_email'] }})</small>
-                                                    @endif
-                                                </p>
-                                                
-                                                @if(isset($email['ai_analysis']) && !empty($email['ai_analysis']['summary']))
-                                                    <div class="alert alert-light py-2 mb-2">
-                                                        <i class="fas fa-robot me-2 text-info"></i>
-                                                        <strong>AI Summary:</strong> {{ $email['ai_analysis']['summary'] }}
-                                                    </div>
-                                                @endif
-                                                
-                                                <p class="card-text">{{ $email['body_preview'] }}</p>
-                                                
-                                                @if(isset($email['ai_analysis']) && !empty($email['ai_analysis']['action_items']))
-                                                    <div class="mt-2">
-                                                        <small class="text-muted"><strong>Action Items:</strong></small>
-                                                        <ul class="list-unstyled mb-0 mt-1">
-                                                            @foreach($email['ai_analysis']['action_items'] as $item)
-                                                                <li class="text-muted">
-                                                                    <i class="fas fa-chevron-right me-1"></i>
-                                                                    {{ $item }}
-                                                                </li>
-                                                            @endforeach
-                                                        </ul>
-                                                    </div>
-                                                @endif
-                                            </div>
-                                            <div class="col-md-4 text-md-end">
-                                                <small class="text-muted">
-                                                    <i class="fas fa-clock me-1"></i>
-                                                    {{ \Carbon\Carbon::parse($email['received_date'])->format('M d, Y H:i') }}
-                                                </small>
-                                                <br>
-                                                
-                                                <div class="mt-2">
-                                                    <span class="badge bg-warning text-dark">
-                                                        <i class="fas fa-envelope me-1"></i>
-                                                        Unread
-                                                    </span>
-                                                    
-                                                    @if(isset($email['inference_classification']) && $email['inference_classification'] === 'focused')
-                                                        <span class="badge bg-info text-white ms-1">
-                                                            <i class="fas fa-star me-1"></i>
-                                                            Focused
-                                                        </span>
-                                                    @endif
-                                                </div>
-                                                
-                                                @if(isset($email['ai_analysis']))
-                                                    <div class="mt-2">
-                                                        @if(!empty($email['ai_analysis']['category']) && $email['ai_analysis']['category'] !== 'personal')
-                                                            @php
-                                                                $categoryColors = [
-                                                                    'work' => 'primary',
-                                                                    'newsletter' => 'secondary',
-                                                                    'promotional' => 'purple',
-                                                                    'support' => 'info'
-                                                                ];
-                                                                $categoryIcons = [
-                                                                    'work' => 'briefcase',
-                                                                    'newsletter' => 'newspaper',
-                                                                    'promotional' => 'tag',
-                                                                    'support' => 'headset'
-                                                                ];
-                                                            @endphp
-                                                            <span class="badge bg-{{ $categoryColors[$email['ai_analysis']['category']] ?? 'secondary' }} text-white d-block mb-1">
-                                                                <i class="fas fa-{{ $categoryIcons[$email['ai_analysis']['category']] ?? 'folder' }} me-1"></i>
-                                                                {{ ucfirst($email['ai_analysis']['category']) }}
-                                                            </span>
+
+                                                    <div class="mt-3">
+                                                        @if(isset($email['ai_analysis']['category']) && $email['ai_analysis']['category'] !== 'personal')
+                                                            <div class="mb-2">
+                                                                <span class="badge bg-secondary">
+                                                                    <i class="fas fa-tag me-1"></i>
+                                                                    {{ ucfirst($email['ai_analysis']['category']) }}
+                                                                </span>
+                                                            </div>
                                                         @endif
-                                                        
+
                                                         @if(isset($email['ai_analysis']['requires_response']) && $email['ai_analysis']['requires_response'])
-                                                            <span class="badge bg-danger text-white d-block mb-1">
-                                                                <i class="fas fa-reply me-1"></i>
-                                                                Response Needed
-                                                            </span>
+                                                            <div class="mb-2">
+                                                                <span class="badge bg-warning text-dark">
+                                                                    <i class="fas fa-reply me-1"></i>
+                                                                    Response Needed
+                                                                </span>
+                                                            </div>
                                                         @endif
-                                                        
+
                                                         @if(isset($email['ai_analysis']['sentiment']))
                                                             @php
+                                                                $sentiment = $email['ai_analysis']['sentiment'];
                                                                 $sentimentColors = [
                                                                     'positive' => 'success',
                                                                     'neutral' => 'secondary',
@@ -539,451 +174,122 @@
                                                                     'negative' => 'frown'
                                                                 ];
                                                             @endphp
-                                                            <span class="badge bg-{{ $sentimentColors[$email['ai_analysis']['sentiment']] }} text-white d-block">
-                                                                <i class="fas fa-{{ $sentimentIcons[$email['ai_analysis']['sentiment']] }} me-1"></i>
-                                                                {{ ucfirst($email['ai_analysis']['sentiment']) }}
-                                                            </span>
+                                                            <div class="mb-2">
+                                                                <span class="badge bg-{{ $sentimentColors[$sentiment] }}">
+                                                                    <i class="fas fa-{{ $sentimentIcons[$sentiment] }} me-1"></i>
+                                                                    {{ ucfirst($sentiment) }}
+                                                                </span>
+                                                            </div>
                                                         @endif
                                                     </div>
-                                                @endif
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
                                 </div>
-                            @endforeach
-                        @else
-                            <div class="no-emails">
-                                <i class="fas fa-inbox fa-4x text-muted mb-3"></i>
-                                <h4 class="text-muted">No Unread Emails</h4>
-                                <p class="text-muted">You're all caught up! No unread emails found.</p>
                             </div>
-                        @endif
-                    </div>
+                        @endforeach
+                    @else
+                        <div class="col-12">
+                            <div class="card border-0 bg-light">
+                                <div class="card-body text-center py-5">
+                                    <i class="fas fa-inbox fa-4x text-muted mb-4"></i>
+                                    <h4 class="text-muted">No Unread Emails</h4>
+                                    <p class="text-muted">You're all caught up! Check back later for new emails.</p>
+                                </div>
+                            </div>
+                        </div>
+                    @endif
+                </div>
 
-                    <!-- Loading indicator -->
-                    <div class="loading text-center py-4" id="loading">
-                        <div class="spinner-border text-primary" role="status">
-                            <span class="visually-hidden">Loading...</span>
+                <!-- Refresh Button -->
+                <div class="text-center mt-4">
+                    <button class="btn btn-primary btn-lg" onclick="refreshEmails()" id="refresh-btn">
+                        <i class="fas fa-sync-alt me-2" id="refresh-icon"></i>
+                        Refresh Summary
+                    </button>
+                </div>
+
+            @else
+                <!-- Authentication Required -->
+                <div class="row justify-content-center">
+                    <div class="col-md-6">
+                        <div class="card border-0 shadow">
+                            <div class="card-body text-center py-5">
+                                <i class="fas fa-lock fa-4x text-primary mb-4"></i>
+                                <h3 class="card-title">Welcome to Daily Email Summary</h3>
+                                <p class="card-text text-muted mb-4">
+                                    Get an AI-powered summary of your most important emails to start your day right.
+                                </p>
+                                <a href="{{ route('auth.microsoft') }}" class="btn btn-primary btn-lg">
+                                    <i class="fab fa-microsoft me-2"></i>
+                                    Sign in with Microsoft
+                                </a>
+                            </div>
                         </div>
-                        <p class="mt-2 text-muted">Refreshing emails...</p>
                     </div>
                 </div>
-            </div>
-        @else
-            <!-- Not authenticated -->
-            <div class="row justify-content-center">
-                <div class="col-md-6 text-center">
-                    <div class="card">
-                        <div class="card-body py-5">
-                            <i class="fas fa-lock fa-4x text-primary mb-4"></i>
-                            <h3 class="card-title">Authentication Required</h3>
-                            <p class="card-text text-muted mb-4">
-                                Please sign in with your Microsoft account to access your emails.
-                            </p>
-                            <a href="{{ route('auth.microsoft') }}" class="btn btn-primary btn-lg">
-                                <i class="fab fa-microsoft me-2"></i>
-                                Sign in with Microsoft
-                            </a>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        @endif
+            @endif
+        </div>
     </div>
+</div>
 
-    <!-- Floating refresh button -->
-    @if(isset($userInfo))
-        <button class="btn btn-primary refresh-btn" onclick="refreshEmails()" title="Refresh Emails">
-            <i class="fas fa-sync-alt"></i>
-        </button>
-    @endif
-
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
-    <script>
-        async function refreshEmails() {
-            const refreshIcon = document.getElementById('refresh-icon');
-            const loading = document.getElementById('loading');
-            const container = document.getElementById('emails-container');
-            const emailCount = document.getElementById('email-count');
-            
-            // Show loading state
-            refreshIcon.classList.add('fa-spin');
-            loading.style.display = 'block';
-            container.style.opacity = '0.5';
-            
-            try {
-                const response = await fetch('{{ route("emails.refresh") }}', {
-                    method: 'GET',
-                    headers: {
-                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
-                        'Accept': 'application/json',
-                    }
-                });
-                
-                const data = await response.json();
-                
-                if (data.success) {
-                    // Update email count
-                    if (emailCount) {
-                        emailCount.textContent = data.count;
-                    }
-                    
-                    // Update cache stats if available
-                    if (data.cache_stats) {
-                        updateCacheStatus(data.cache_stats);
-                    }
-                    
-                    // Update emails container
-                    if (data.emails.length > 0) {
-                        let emailsHtml = '';
-                        data.emails.forEach(email => {
-                            const receivedDate = new Date(email.received_date).toLocaleDateString('en-US', {
-                                year: 'numeric', month: 'short', day: 'numeric',
-                                hour: '2-digit', minute: '2-digit'
-                            });
-                            
-                            // Generate AI analysis badges and content
-                            let aiContent = '';
-                            let priorityBadge = '';
-                            let categoryBadges = '';
-                            let actionItems = '';
-                            
-                            if (email.ai_analysis) {
-                                const analysis = email.ai_analysis;
-                                
-                                // Priority badge
-                                if (analysis.priority) {
-                                    const priorityColors = {
-                                        'high': 'danger',
-                                        'medium': 'warning',
-                                        'low': 'success'
-                                    };
-                                    const priorityIcons = {
-                                        'high': 'exclamation-triangle',
-                                        'medium': 'exclamation-circle',
-                                        'low': 'check-circle'
-                                    };
-                                    priorityBadge = `<span class="badge bg-${priorityColors[analysis.priority]} text-white">
-                                        <i class="fas fa-${priorityIcons[analysis.priority]} me-1"></i>
-                                        ${analysis.priority.charAt(0).toUpperCase() + analysis.priority.slice(1)} Priority
-                                    </span>`;
-                                }
-                                
-                                // AI Summary
-                                if (analysis.summary) {
-                                    aiContent += `<div class="alert alert-light py-2 mb-2">
-                                        <i class="fas fa-robot me-2 text-info"></i>
-                                        <strong>AI Summary:</strong> ${analysis.summary}
-                                    </div>`;
-                                }
-                                
-                                // Action items
-                                if (analysis.action_items && analysis.action_items.length > 0) {
-                                    actionItems = `<div class="mt-2">
-                                        <small class="text-muted"><strong>Action Items:</strong></small>
-                                        <ul class="list-unstyled mb-0 mt-1">
-                                            ${analysis.action_items.map(item => 
-                                                `<li class="text-muted">
-                                                    <i class="fas fa-chevron-right me-1"></i>
-                                                    ${item}
-                                                </li>`
-                                            ).join('')}
-                                        </ul>
-                                    </div>`;
-                                }
-                                
-                                // Category and other badges
-                                if (analysis.category && analysis.category !== 'personal') {
-                                    const categoryColors = {
-                                        'work': 'primary',
-                                        'newsletter': 'secondary',
-                                        'promotional': 'purple',
-                                        'support': 'info'
-                                    };
-                                    const categoryIcons = {
-                                        'work': 'briefcase',
-                                        'newsletter': 'newspaper',
-                                        'promotional': 'tag',
-                                        'support': 'headset'
-                                    };
-                                    categoryBadges += `<span class="badge bg-${categoryColors[analysis.category] || 'secondary'} text-white d-block mb-1">
-                                        <i class="fas fa-${categoryIcons[analysis.category] || 'folder'} me-1"></i>
-                                        ${analysis.category.charAt(0).toUpperCase() + analysis.category.slice(1)}
-                                    </span>`;
-                                }
-                                
-                                if (analysis.requires_response) {
-                                    categoryBadges += `<span class="badge bg-danger text-white d-block mb-1">
-                                        <i class="fas fa-reply me-1"></i>
-                                        Response Needed
-                                    </span>`;
-                                }
-                                
-                                if (analysis.sentiment) {
-                                    const sentimentColors = {
-                                        'positive': 'success',
-                                        'neutral': 'secondary',
-                                        'negative': 'danger'
-                                    };
-                                    const sentimentIcons = {
-                                        'positive': 'smile',
-                                        'neutral': 'meh',
-                                        'negative': 'frown'
-                                    };
-                                    categoryBadges += `<span class="badge bg-${sentimentColors[analysis.sentiment]} text-white d-block">
-                                        <i class="fas fa-${sentimentIcons[analysis.sentiment]} me-1"></i>
-                                        ${analysis.sentiment.charAt(0).toUpperCase() + analysis.sentiment.slice(1)}
-                                    </span>`;
-                                }
-                            }
-                            
-                            emailsHtml += `
-                                <div class="card email-card mb-3">
-                                    <div class="card-body">
-                                        <div class="row">
-                                            <div class="col-md-8">
-                                                <div class="d-flex align-items-start mb-2">
-                                                    <h5 class="card-title mb-0 me-2">
-                                                        <i class="fas fa-envelope me-2 text-primary"></i>
-                                                        ${email.subject}
-                                                    </h5>
-                                                    ${priorityBadge}
-                                                </div>
-                                                <p class="text-muted mb-2">
-                                                    <i class="fas fa-user me-2"></i>
-                                                    <strong>From:</strong> ${email.from}
-                                                    ${email.from_email ? `<small class="text-muted">(${email.from_email})</small>` : ''}
-                                                </p>
-                                                ${aiContent}
-                                                <p class="card-text">${email.body_preview}</p>
-                                                ${actionItems}
-                                            </div>
-                                            <div class="col-md-4 text-md-end">
-                                                <small class="text-muted">
-                                                    <i class="fas fa-clock me-1"></i>
-                                                    ${receivedDate}
-                                                </small>
-                                                <br>
-                                                <div class="mt-2">
-                                                    <span class="badge bg-warning text-dark">
-                                                        <i class="fas fa-envelope me-1"></i>
-                                                        Unread
-                                                    </span>
-                                                    ${email.inference_classification === 'focused' ? 
-                                                        '<span class="badge bg-info text-white ms-1"><i class="fas fa-star me-1"></i>Focused</span>' : 
-                                                        ''
-                                                    }
-                                                </div>
-                                                ${categoryBadges ? `<div class="mt-2">${categoryBadges}</div>` : ''}
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            `;
-                        });
-                        container.innerHTML = emailsHtml;
-                    } else {
-                        container.innerHTML = `
-                            <div class="no-emails">
-                                <i class="fas fa-inbox fa-4x text-muted mb-3"></i>
-                                <h4 class="text-muted">No Unread Emails</h4>
-                                <p class="text-muted">You're all caught up! No unread emails found.</p>
-                            </div>
-                        `;
-                    }
-                    
-                    // Show success message
-                    showAlert('success', 'Emails refreshed successfully!');
-                } else {
-                    showAlert('danger', 'Failed to refresh emails: ' + data.error);
-                }
-            } catch (error) {
-                showAlert('danger', 'Error refreshing emails: ' + error.message);
-            } finally {
-                // Hide loading state
-                refreshIcon.classList.remove('fa-spin');
-                loading.style.display = 'none';
-                container.style.opacity = '1';
-            }
-        }
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+    async function refreshEmails() {
+        const refreshIcon = document.getElementById('refresh-icon');
+        const refreshBtn = document.getElementById('refresh-btn');
         
-        function showAlert(type, message) {
-            const alertHtml = `
-                <div class="alert alert-${type} alert-dismissible fade show" role="alert">
-                    <i class="fas fa-${type === 'success' ? 'check-circle' : 'exclamation-triangle'} me-2"></i>
-                    ${message}
-                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                </div>
-            `;
-            
-            const container = document.querySelector('.container');
-            const firstRow = container.querySelector('.row');
-            firstRow.insertAdjacentHTML('afterend', alertHtml);
-            
-            // Auto-dismiss after 5 seconds
-            setTimeout(() => {
-                const alert = container.querySelector('.alert:last-of-type');
-                if (alert) {
-                    alert.remove();
-                }
-            }, 5000);
-        }
-
-        async function clearCache() {
-            const cacheRefreshIcon = document.getElementById('cache-refresh-icon');
-            
-            try {
-                cacheRefreshIcon.classList.add('fa-spin');
-                
-                const response = await fetch('{{ route("emails.cache.clear") }}', {
-                    method: 'POST',
-                    headers: {
-                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
-                        'Accept': 'application/json',
-                    }
-                });
-                
-                const data = await response.json();
-                
-                if (data.success) {
-                    showAlert('success', 'Cache cleared successfully!');
-                    // Refresh cache stats
-                    await refreshCacheStats();
-                } else {
-                    showAlert('danger', 'Failed to clear cache: ' + data.error);
-                }
-            } catch (error) {
-                showAlert('danger', 'Error clearing cache: ' + error.message);
-            } finally {
-                cacheRefreshIcon.classList.remove('fa-spin');
-            }
-        }
-
-        async function refreshCacheStats() {
-            const cacheRefreshIcon = document.getElementById('cache-refresh-icon');
-            
-            try {
-                cacheRefreshIcon.classList.add('fa-spin');
-                
-                const response = await fetch('{{ route("emails.cache.stats") }}', {
-                    method: 'GET',
-                    headers: {
-                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
-                        'Accept': 'application/json',
-                    }
-                });
-                
-                const data = await response.json();
-                
-                if (data.success) {
-                    updateCacheStatus(data.cache_stats);
-                } else {
-                    showAlert('danger', 'Failed to refresh cache stats: ' + data.error);
-                }
-            } catch (error) {
-                showAlert('danger', 'Error refreshing cache stats: ' + error.message);
-            } finally {
-                cacheRefreshIcon.classList.remove('fa-spin');
-            }
-        }
-
-        function updateCacheStatus(cacheStats) {
-            const cacheStatus = document.getElementById('cache-status');
-            if (!cacheStatus) return;
-            
-            const formatTime = (dateString) => {
-                if (!dateString) return 'N/A';
-                const date = new Date(dateString);
-                return date.toLocaleTimeString('en-US', { hour12: false });
-            };
-            
-            cacheStatus.innerHTML = `
-                <div class="row text-center">
-                    <div class="col-md-3">
-                        <div class="mb-1">
-                            <i class="fas fa-envelope text-primary"></i>
-                            <small class="d-block text-muted">Emails Cache</small>
-                        </div>
-                        <span class="badge ${cacheStats.emails.cached ? 'bg-success' : 'bg-secondary'}">
-                            ${cacheStats.emails.cached ? 'Cached' : 'Not Cached'}
-                        </span>
-                        ${cacheStats.emails.cached ? `<small class="d-block text-muted mt-1">${cacheStats.emails.count} emails</small>` : ''}
-                    </div>
-                    <div class="col-md-3">
-                        <div class="mb-1">
-                            <i class="fas fa-user text-info"></i>
-                            <small class="d-block text-muted">User Info Cache</small>
-                        </div>
-                        <span class="badge ${cacheStats.user_info.cached ? 'bg-success' : 'bg-secondary'}">
-                            ${cacheStats.user_info.cached ? 'Cached' : 'Not Cached'}
-                        </span>
-                    </div>
-                    <div class="col-md-3">
-                        <div class="mb-1">
-                            <i class="fas fa-clock text-warning"></i>
-                            <small class="d-block text-muted">Cache TTL</small>
-                        </div>
-                        <small class="text-muted">${cacheStats.cache_ttl_seconds}s</small>
-                    </div>
-                    <div class="col-md-3">
-                        <div class="mb-1">
-                            <i class="fas fa-hourglass-half text-danger"></i>
-                            <small class="d-block text-muted">Email Cache Expires</small>
-                        </div>
-                        <small class="text-muted" id="cache-expires">
-                            ${formatTime(cacheStats.emails.expires_at)}
-                        </small>
-                    </div>
-                </div>
-            `;
-        }
+        // Show loading state
+        refreshIcon.classList.add('fa-spin');
+        refreshBtn.disabled = true;
+        refreshBtn.innerHTML = '<i class="fas fa-sync-alt fa-spin me-2"></i>Refreshing...';
         
-        async function clearCache() {
-            try {
-                const response = await fetch('{{ route("emails.cache.clear") }}', {
-                    method: 'POST',
-                    headers: {
-                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
-                        'Accept': 'application/json',
-                    }
-                });
-                
-                const data = await response.json();
-                
-                if (data.success) {
-                    showAlert('success', 'Cache cleared successfully!');
-                    // Refresh cache stats
-                    await refreshCacheStats();
-                } else {
-                    showAlert('danger', 'Failed to clear cache: ' + data.error);
+        try {
+            const response = await fetch('{{ route("emails.index") }}', {
+                method: 'GET',
+                headers: {
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                    'Accept': 'application/json',
                 }
-            } catch (error) {
-                showAlert('danger', 'Error clearing cache: ' + error.message);
+            });
+            
+            if (response.ok) {
+                // Reload the page to show updated emails
+                window.location.reload();
+            } else {
+                throw new Error('Failed to refresh emails');
             }
+            
+        } catch (error) {
+            console.error('Error refreshing emails:', error);
+            alert('Failed to refresh emails. Please try again.');
+        } finally {
+            refreshIcon.classList.remove('fa-spin');
+            refreshBtn.disabled = false;
+            refreshBtn.innerHTML = '<i class="fas fa-sync-alt me-2"></i>Refresh Summary';
         }
-        
-        async function refreshCacheStats() {
-            try {
-                const response = await fetch('{{ route("emails.cache.stats") }}', {
-                    method: 'GET',
-                    headers: {
-                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
-                        'Accept': 'application/json',
-                    }
-                });
-                
-                const data = await response.json();
-                
-                if (data.success) {
-                    updateCacheStatus(data.cache_stats);
-                    showAlert('success', 'Cache stats refreshed!');
-                } else {
-                    showAlert('danger', 'Failed to refresh cache stats: ' + data.error);
-                }
-            } catch (error) {
-                showAlert('danger', 'Error refreshing cache stats: ' + error.message);
-            }
-        }
-    </script>
+    }
+</script>
+
+<style>
+    .card {
+        transition: transform 0.2s ease-in-out;
+    }
+    
+    .card:hover {
+        transform: translateY(-2px);
+    }
+    
+    .badge-lg {
+        font-size: 0.9rem;
+        padding: 6px 12px;
+    }
+    
+    body {
+        background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+        min-height: 100vh;
+    }
+</style>
 </body>
 </html>
