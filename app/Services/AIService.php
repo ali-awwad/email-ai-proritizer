@@ -64,6 +64,7 @@ class AIService
     {
         $subject = $email['subject'] ?? 'No Subject';
         $from = $email['from'] ?? 'Unknown Sender';
+        $fromEmail = $email['from_email'] ?? '';
         $preview = $email['body_preview'] ?? '';
         
         return "Analyze this email and provide a JSON response with the following structure:
@@ -73,15 +74,26 @@ class AIService
     \"category\": \"work|personal|newsletter|promotional|support\",
     \"action_items\": [\"action1\", \"action2\"],
     \"sentiment\": \"positive|neutral|negative\",
-    \"requires_response\": true|false
+    \"requires_response\": true|false,
+    \"sender_authority\": \"high|medium|low\",
+    \"sender_title\": \"Detected job title or position if any\"
 }
 
 Email details:
 Subject: {$subject}
-From: {$from}
+From: {$from} ({$fromEmail})
 Content: {$preview}
 
-Focus on extracting key information and determining if this email requires immediate attention or action.";
+Focus on:
+1. Extract key information and determining if this email requires immediate attention or action
+2. Analyze the sender's authority level based on:
+   - Email signature mentions of job titles (CEO, Director, VP, Manager, etc.)
+   - Domain authority (company domain vs personal)
+   - Content tone and urgency
+   - Context clues about sender's position
+3. High authority: C-level executives, Directors, VPs, important clients
+4. Medium authority: Managers, team leads, colleagues
+5. Low authority: Junior staff, vendors, newsletters, automated systems";
     }
     
     /**
@@ -95,7 +107,9 @@ Focus on extracting key information and determining if this email requires immed
             'category' => 'personal',
             'action_items' => [],
             'sentiment' => 'neutral',
-            'requires_response' => false
+            'requires_response' => false,
+            'sender_authority' => 'medium',
+            'sender_title' => ''
         ];
         
         // Merge with defaults to ensure all keys exist
@@ -104,6 +118,11 @@ Focus on extracting key information and determining if this email requires immed
         // Validate priority
         if (!in_array($analysis['priority'], ['high', 'medium', 'low'])) {
             $analysis['priority'] = 'medium';
+        }
+        
+        // Validate sender authority
+        if (!in_array($analysis['sender_authority'], ['high', 'medium', 'low'])) {
+            $analysis['sender_authority'] = 'medium';
         }
         
         // Validate category
@@ -127,6 +146,11 @@ Focus on extracting key information and determining if this email requires immed
         
         // Ensure requires_response is boolean
         $analysis['requires_response'] = (bool) $analysis['requires_response'];
+        
+        // Clean sender title
+        if (!is_string($analysis['sender_title'])) {
+            $analysis['sender_title'] = '';
+        }
         
         return $analysis;
     }
@@ -251,6 +275,181 @@ Focus on extracting key information and determining if this email requires immed
         }
     }
     
+    /**
+     * Generate a comprehensive daily summary from analyzed emails
+     */
+    public function generateDailySummary(array $emails): array
+    {
+        if (empty($emails)) {
+            return [
+                'total_emails' => 0,
+                'summary_text' => 'No unread emails to summarize.',
+                'priority_breakdown' => ['high' => 0, 'medium' => 0, 'low' => 0],
+                'action_required_count' => 0,
+                'high_authority_senders' => [],
+                'top_actions' => []
+            ];
+        }
+
+        // Sort emails by priority (high first) and sender authority
+        $sortedEmails = $this->sortEmailsByPriorityAndAuthority($emails);
+        
+        $summary = [
+            'total_emails' => count($emails),
+            'priority_breakdown' => ['high' => 0, 'medium' => 0, 'low' => 0],
+            'action_required_count' => 0,
+            'high_authority_senders' => [],
+            'top_actions' => [],
+            'summary_text' => '',
+            'prioritized_items' => []
+        ];
+
+        foreach ($emails as $email) {
+            $analysis = $email['ai_analysis'] ?? [];
+            
+            // Count priorities
+            $priority = $analysis['priority'] ?? 'medium';
+            if (isset($summary['priority_breakdown'][$priority])) {
+                $summary['priority_breakdown'][$priority]++;
+            }
+            
+            // Count action required
+            if ($analysis['requires_response'] ?? false) {
+                $summary['action_required_count']++;
+            }
+            
+            // Track high authority senders who need response
+            if (($analysis['sender_authority'] ?? 'medium') === 'high' && 
+                ($analysis['requires_response'] ?? false)) {
+                $summary['high_authority_senders'][] = [
+                    'name' => $email['from'] ?? 'Unknown',
+                    'title' => $analysis['sender_title'] ?? '',
+                    'subject' => $email['subject'] ?? 'No Subject',
+                    'priority' => $analysis['priority'] ?? 'medium'
+                ];
+            }
+            
+            // Collect action items
+            if (!empty($analysis['action_items'])) {
+                foreach ($analysis['action_items'] as $action) {
+                    $summary['top_actions'][] = [
+                        'action' => $action,
+                        'from' => $email['from'] ?? 'Unknown',
+                        'priority' => $analysis['priority'] ?? 'medium',
+                        'sender_authority' => $analysis['sender_authority'] ?? 'medium'
+                    ];
+                }
+            }
+        }
+
+        // Generate prioritized summary items
+        $summary['prioritized_items'] = $this->createPrioritizedItems($sortedEmails);
+        
+        // Generate summary text
+        $summary['summary_text'] = $this->generateSummaryText($summary);
+        
+        // Limit and sort top actions by priority and authority
+        $summary['top_actions'] = $this->prioritizeActions($summary['top_actions']);
+        
+        return $summary;
+    }
+
+    /**
+     * Sort emails by priority and sender authority
+     */
+    private function sortEmailsByPriorityAndAuthority(array $emails): array
+    {
+        usort($emails, function($a, $b) {
+            $aPriority = $a['ai_analysis']['priority'] ?? 'medium';
+            $bPriority = $b['ai_analysis']['priority'] ?? 'medium';
+            $aAuthority = $a['ai_analysis']['sender_authority'] ?? 'medium';
+            $bAuthority = $b['ai_analysis']['sender_authority'] ?? 'medium';
+            
+            // Priority weights
+            $priorityWeights = ['high' => 3, 'medium' => 2, 'low' => 1];
+            $authorityWeights = ['high' => 3, 'medium' => 2, 'low' => 1];
+            
+            $aScore = $priorityWeights[$aPriority] * 2 + $authorityWeights[$aAuthority];
+            $bScore = $priorityWeights[$bPriority] * 2 + $authorityWeights[$bAuthority];
+            
+            return $bScore - $aScore; // Descending order
+        });
+        
+        return $emails;
+    }
+
+    /**
+     * Create prioritized summary items for dropdown
+     */
+    private function createPrioritizedItems(array $sortedEmails): array
+    {
+        $items = [];
+        
+        foreach ($sortedEmails as $index => $email) {
+            $analysis = $email['ai_analysis'] ?? [];
+            
+            $item = [
+                'index' => $index + 1,
+                'subject' => $email['subject'] ?? 'No Subject',
+                'from' => $email['from'] ?? 'Unknown',
+                'summary' => $analysis['summary'] ?? 'No summary available',
+                'priority' => $analysis['priority'] ?? 'medium',
+                'sender_authority' => $analysis['sender_authority'] ?? 'medium',
+                'requires_response' => $analysis['requires_response'] ?? false,
+                'action_items' => $analysis['action_items'] ?? [],
+                'is_vip' => ($analysis['sender_authority'] ?? 'medium') === 'high' && 
+                           ($analysis['requires_response'] ?? false),
+                'sender_title' => $analysis['sender_title'] ?? ''
+            ];
+            
+            $items[] = $item;
+        }
+        
+        return $items;
+    }
+
+    /**
+     * Generate summary text
+     */
+    private function generateSummaryText(array $summary): string
+    {
+        $text = "You have {$summary['total_emails']} unread emails. ";
+        
+        if ($summary['priority_breakdown']['high'] > 0) {
+            $text .= "{$summary['priority_breakdown']['high']} high priority. ";
+        }
+        
+        if ($summary['action_required_count'] > 0) {
+            $text .= "{$summary['action_required_count']} require response. ";
+        }
+        
+        if (!empty($summary['high_authority_senders'])) {
+            $vipCount = count($summary['high_authority_senders']);
+            $text .= "{$vipCount} from senior contacts need attention.";
+        }
+        
+        return trim($text);
+    }
+
+    /**
+     * Prioritize and limit actions
+     */
+    private function prioritizeActions(array $actions): array
+    {
+        // Sort by priority and authority
+        usort($actions, function($a, $b) {
+            $priorityWeights = ['high' => 3, 'medium' => 2, 'low' => 1];
+            $authorityWeights = ['high' => 3, 'medium' => 2, 'low' => 1];
+            
+            $aScore = $priorityWeights[$a['priority']] + $authorityWeights[$a['sender_authority']];
+            $bScore = $priorityWeights[$b['priority']] + $authorityWeights[$b['sender_authority']];
+            
+            return $bScore - $aScore;
+        });
+        
+        return array_slice($actions, 0, 8); // Limit to top 8 actions
+    }
+
     /**
      * Test AI service connection
      */

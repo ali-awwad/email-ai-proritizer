@@ -22,6 +22,148 @@
                     <p class="lead text-muted">
                         Good morning! Here's your AI-powered summary of today's important emails.
                     </p>
+                    
+                    <!-- Daily Summary Dropdown -->
+                    @if(isset($dailySummary) && $dailySummary['total_emails'] > 0)
+                        <div class="row justify-content-center mb-4">
+                            <div class="col-md-10">
+                                <div class="card border-0 shadow-sm" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                                    <div class="card-body">
+                                        <div class="d-flex justify-content-between align-items-center" data-bs-toggle="collapse" data-bs-target="#dailySummaryCollapse" style="cursor: pointer;">
+                                            <div class="text-white">
+                                                <h5 class="mb-1">
+                                                    <i class="fas fa-brain me-2"></i>
+                                                    Quick Summary
+                                                </h5>
+                                                <p class="mb-0 opacity-75">{{ $dailySummary['summary_text'] }}</p>
+                                            </div>
+                                            <i class="fas fa-chevron-down text-white" id="summary-arrow"></i>
+                                        </div>
+                                        
+                                        <div class="collapse mt-3" id="dailySummaryCollapse">
+                                            <hr class="border-white opacity-25">
+                                            
+                                            <!-- Prioritized Email List -->
+                                            <div class="row">
+                                                <div class="col-md-8">
+                                                    <h6 class="text-white mb-3">
+                                                        <i class="fas fa-sort-amount-down me-2"></i>
+                                                        Emails by Priority
+                                                    </h6>
+                                                    
+                                                    @foreach($dailySummary['prioritized_items'] as $item)
+                                                        <div class="mb-2 p-2 rounded" style="background: rgba(255,255,255,0.1);">
+                                                            <div class="d-flex justify-content-between align-items-start">
+                                                                <div class="flex-grow-1">
+                                                                    <div class="d-flex align-items-center mb-1">
+                                                                        <span class="badge badge-sm me-2" style="background: rgba(255,255,255,0.2);">
+                                                                            #{{ $item['index'] }}
+                                                                        </span>
+                                                                        
+                                                                        @if($item['is_vip'])
+                                                                            <span class="badge bg-warning text-dark me-2">
+                                                                                <i class="fas fa-crown me-1"></i>VIP
+                                                                            </span>
+                                                                        @endif
+                                                                        
+                                                                        @php
+                                                                            $priorityColors = [
+                                                                                'high' => 'danger',
+                                                                                'medium' => 'warning', 
+                                                                                'low' => 'success'
+                                                                            ];
+                                                                        @endphp
+                                                                        <span class="badge bg-{{ $priorityColors[$item['priority']] }} me-2">
+                                                                            {{ ucfirst($item['priority']) }}
+                                                                        </span>
+                                                                        
+                                                                        @if($item['requires_response'])
+                                                                            <span class="badge bg-info">
+                                                                                <i class="fas fa-reply me-1"></i>Reply
+                                                                            </span>
+                                                                        @endif
+                                                                    </div>
+                                                                    
+                                                                    <div class="text-white">
+                                                                        <strong>{{ Str::limit($item['subject'], 40) }}</strong>
+                                                                        <br>
+                                                                        <small class="opacity-75">
+                                                                            From: {{ $item['from'] }}
+                                                                            @if($item['sender_title'])
+                                                                                ({{ $item['sender_title'] }})
+                                                                            @endif
+                                                                        </small>
+                                                                        <br>
+                                                                        <small class="opacity-75">{{ Str::limit($item['summary'], 80) }}</small>
+                                                                    </div>
+                                                                    
+                                                                    @if(!empty($item['action_items']))
+                                                                        <div class="mt-2">
+                                                                            <small class="text-white opacity-75">
+                                                                                <i class="fas fa-tasks me-1"></i>
+                                                                                Actions: {{ implode(', ', array_slice($item['action_items'], 0, 2)) }}
+                                                                                @if(count($item['action_items']) > 2)
+                                                                                    ...
+                                                                                @endif
+                                                                            </small>
+                                                                        </div>
+                                                                    @endif
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    @endforeach
+                                                </div>
+                                                
+                                                <!-- Summary Stats -->
+                                                <div class="col-md-4">
+                                                    <h6 class="text-white mb-3">
+                                                        <i class="fas fa-chart-pie me-2"></i>
+                                                        Quick Stats
+                                                    </h6>
+                                                    
+                                                    <div class="mb-3">
+                                                        <div class="d-flex justify-content-between text-white mb-1">
+                                                            <small>High Priority</small>
+                                                            <small>{{ $dailySummary['priority_breakdown']['high'] }}</small>
+                                                        </div>
+                                                        <div class="d-flex justify-content-between text-white mb-1">
+                                                            <small>Need Response</small>
+                                                            <small>{{ $dailySummary['action_required_count'] }}</small>
+                                                        </div>
+                                                        <div class="d-flex justify-content-between text-white mb-1">
+                                                            <small>VIP Senders</small>
+                                                            <small>{{ count($dailySummary['high_authority_senders']) }}</small>
+                                                        </div>
+                                                    </div>
+                                                    
+                                                    @if(!empty($dailySummary['high_authority_senders']))
+                                                        <div>
+                                                            <h6 class="text-white mb-2">
+                                                                <i class="fas fa-star me-1"></i>
+                                                                VIP Alerts
+                                                            </h6>
+                                                            @foreach(array_slice($dailySummary['high_authority_senders'], 0, 3) as $vip)
+                                                                <div class="mb-2 p-2 rounded" style="background: rgba(255,255,255,0.15);">
+                                                                    <div class="text-white">
+                                                                        <strong class="d-block">{{ $vip['name'] }}</strong>
+                                                                        @if($vip['title'])
+                                                                            <small class="opacity-75">{{ $vip['title'] }}</small><br>
+                                                                        @endif
+                                                                        <small class="opacity-75">{{ Str::limit($vip['subject'], 30) }}</small>
+                                                                    </div>
+                                                                </div>
+                                                            @endforeach
+                                                        </div>
+                                                    @endif
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    @endif
+
                     <div class="row mt-4">
                         <div class="col-md-4">
                             <div class="card border-0 bg-light">
@@ -65,7 +207,27 @@
                     @if(count($emails) > 0)
                         @foreach($emails as $index => $email)
                             <div class="col-12 mb-4">
-                                <div class="card h-100 shadow-sm border-0">
+                                @php
+                                    $isVip = isset($email['ai_analysis']['sender_authority']) && 
+                                             $email['ai_analysis']['sender_authority'] === 'high' &&
+                                             ($email['ai_analysis']['requires_response'] ?? false);
+                                @endphp
+                                
+                                <div class="card h-100 shadow-sm border-0 {{ $isVip ? 'border-warning' : '' }}" 
+                                     style="{{ $isVip ? 'box-shadow: 0 0 15px rgba(255, 193, 7, 0.3) !important;' : '' }}">
+                                    
+                                    @if($isVip)
+                                        <div class="card-header bg-warning text-dark py-2">
+                                            <div class="d-flex align-items-center">
+                                                <i class="fas fa-crown me-2"></i>
+                                                <strong>VIP - High Authority Sender Needs Response</strong>
+                                                @if(isset($email['ai_analysis']['sender_title']) && $email['ai_analysis']['sender_title'])
+                                                    <span class="ms-2 badge bg-dark">{{ $email['ai_analysis']['sender_title'] }}</span>
+                                                @endif
+                                            </div>
+                                        </div>
+                                    @endif
+                                    
                                     <div class="card-body">
                                         <div class="row">
                                             <!-- Email Content -->
@@ -81,6 +243,11 @@
                                                     <p class="text-muted mb-1">
                                                         <i class="fas fa-user me-2"></i>
                                                         <strong>From:</strong> {{ $email['from'] }}
+                                                        @if(isset($email['ai_analysis']['sender_authority']) && $email['ai_analysis']['sender_authority'] === 'high')
+                                                            <span class="badge bg-warning text-dark ms-2">
+                                                                <i class="fas fa-star me-1"></i>High Authority
+                                                            </span>
+                                                        @endif
                                                     </p>
                                                     <p class="text-muted mb-0">
                                                         <i class="fas fa-clock me-2"></i>
@@ -236,6 +403,22 @@
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
+    // Handle dropdown arrow rotation
+    document.addEventListener('DOMContentLoaded', function() {
+        const summaryCollapse = document.getElementById('dailySummaryCollapse');
+        const summaryArrow = document.getElementById('summary-arrow');
+        
+        if (summaryCollapse && summaryArrow) {
+            summaryCollapse.addEventListener('shown.bs.collapse', function() {
+                summaryArrow.style.transform = 'rotate(180deg)';
+            });
+            
+            summaryCollapse.addEventListener('hidden.bs.collapse', function() {
+                summaryArrow.style.transform = 'rotate(0deg)';
+            });
+        }
+    });
+
     async function refreshEmails() {
         const refreshIcon = document.getElementById('refresh-icon');
         const refreshBtn = document.getElementById('refresh-btn');
@@ -289,6 +472,21 @@
     body {
         background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
         min-height: 100vh;
+    }
+    
+    /* VIP Email styling */
+    .border-warning {
+        border: 2px solid #ffc107 !important;
+    }
+    
+    /* Smooth arrow rotation */
+    #summary-arrow {
+        transition: transform 0.3s ease;
+    }
+    
+    /* Summary dropdown styling */
+    .collapse {
+        transition: all 0.3s ease;
     }
 </style>
 </body>

@@ -31,9 +31,9 @@ class EmailController extends Controller
             // Get user info
             $userInfo = $this->graphService->getUserInfo();
 
-            // Get last 10 unread emails from inbox only
-            $emails = $this->graphService->getUnreadEmails(10, 0);
-            
+            // Get last 20 unread emails from inbox only
+            $emails = $this->graphService->getUnreadEmails(20, 0);
+
             // Process each email with AI analysis
             foreach ($emails as &$email) {
                 try {
@@ -47,20 +47,31 @@ class EmailController extends Controller
                         'category' => 'personal',
                         'requires_response' => false,
                         'sentiment' => 'neutral',
-                        'action_items' => []
+                        'action_items' => [],
+                        'sender_authority' => 'medium',
+                        'sender_title' => ''
                     ];
                 }
             }
+
+            // Generate daily summary
+            $dailySummary = $this->aiService->generateDailySummary($emails);
             
             return view('emails.index', [
                 'emails' => $emails,
-                'userInfo' => $userInfo
+                'userInfo' => $userInfo,
+                'dailySummary' => $dailySummary
             ]);
             
         } catch (Exception $e) {
             return view('emails.index', [
                 'emails' => [],
                 'userInfo' => null,
+                'dailySummary' => [
+                    'total_emails' => 0,
+                    'summary_text' => 'Unable to load emails.',
+                    'prioritized_items' => []
+                ],
                 'error' => 'Failed to load emails: ' . $e->getMessage()
             ]);
         }
