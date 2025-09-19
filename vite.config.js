@@ -9,12 +9,24 @@ export default defineConfig({
             input: ['resources/css/app.css', 'resources/js/app.tsx'],
             refresh: true,
         }),
-        react(),
+        react({
+            include: "**/*.{jsx,tsx}",
+            babel: {
+                parserOpts: {
+                    plugins: ['decorators-legacy']
+                }
+            }
+        }),
         tailwindcss(),
     ],
     resolve: {
         alias: {
             '@': '/resources/js',
+        },
+    },
+    server: {
+        hmr: {
+            host: 'localhost',
         },
     },
 });
