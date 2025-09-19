@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Services\GraphService;
 use App\Services\AIService;
+use App\Services\InertiaService;
 use Illuminate\Http\Request;
 use Exception;
 
@@ -22,9 +23,17 @@ class EmailController extends Controller
     {
         try {
             if (!$this->graphService->isAuthenticated()) {
-                return view('emails.index', [
+                return InertiaService::render('Emails', [
                     'emails' => [], 
-                    'userInfo' => null
+                    'userInfo' => null,
+                    'dailySummary' => [
+                        'total_emails' => 0,
+                        'high_priority' => 0,
+                        'medium_priority' => 0,
+                        'low_priority' => 0,
+                        'summary_text' => '',
+                        'prioritized_items' => []
+                    ]
                 ]);
             }
             
@@ -57,18 +66,21 @@ class EmailController extends Controller
             // Generate daily summary
             $dailySummary = $this->aiService->generateDailySummary($emails);
             
-            return view('emails.index', [
+            return InertiaService::render('Emails', [
                 'emails' => $emails,
                 'userInfo' => $userInfo,
                 'dailySummary' => $dailySummary
             ]);
             
         } catch (Exception $e) {
-            return view('emails.index', [
+            return InertiaService::render('Emails', [
                 'emails' => [],
                 'userInfo' => null,
                 'dailySummary' => [
                     'total_emails' => 0,
+                    'high_priority' => 0,
+                    'medium_priority' => 0,
+                    'low_priority' => 0,
                     'summary_text' => 'Unable to load emails.',
                     'prioritized_items' => []
                 ],
