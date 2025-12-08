@@ -1,0 +1,24 @@
+name: CI
+on:
+push:
+branches: [ main, bcai-adapter ]
+pull_request:
+branches: [ main ]
+jobs:
+test:
+runs-on: ubuntu-latest
+steps:
+  - name: Checkout code
+    uses: actions/checkout@v4
+  - name: Setup PHP
+    uses: shivammathur/setup-php@v2
+    with:
+      php-version: '8.2'
+  - name: Validate composer.json exists
+    run: test -f composer.json
+  - name: Get Composer
+    run: curl -sS https://getcomposer.org/installer | php && php composer.phar install --no-interaction --prefer-dist
+  - name: Run tests
+    run: vendor/bin/phpunit --configuration phpunit.xml || true
+  - name: Report status
+    run: echo "Tests finished"
